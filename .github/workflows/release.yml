@@ -1,21 +1,30 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: [CI]
+    types:
+      - completed
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # Only run when the CI workflow completed successfully *and*
+    # was triggered by a version tag push (v*).
+    # This prevents releases for branch pushes or failed CI runs.
+    if: |
+      github.event.workflow_run.conclusion == 'success'
+      && startsWith(github.event.workflow_run.head_branch, 'v')
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.workflow_run.head_branch }}
 
-      - name: Create release archive
+      - name: Extract tag
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
+          TAG="${{ github.event.workflow_run.head_branch }}"
           ARCHIVE="demoni-${TAG}.zip"
           git archive --format=zip --prefix="demoni-${TAG}/" --output="${ARCHIVE}" HEAD
           echo "archive=${ARCHIVE}" >> "${GITHUB_ENV}"
