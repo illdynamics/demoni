@@ -1,0 +1,14 @@
+node_modules
+bridge/node_modules
+dist
+bridge/dist
+.env
+.git
+.codeseeq
+*.md
+!README.md
+test
+.idea
+.vscode
+*.log
+.DS_Store

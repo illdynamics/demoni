@@ -1,0 +1,14 @@
+node_modules/
+dist/
+bridge/dist/
+*.js.map
+.demoni/
+.env
+!.env.example
+.DS_Store
+*.log
+gemini-cli/
+.codeseeq/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

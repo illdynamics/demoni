@@ -1,0 +1,67 @@
+{
+  "name": "demoni",
+  "version": "0.2.1",
+  "description": "Production-grade Gemini CLI drop-in replacement that routes to DeepSeek V4 models",
+  "type": "module",
+  "bin": {
+    "demoni": "./bin/demoni.js"
+  },
+  "main": "dist/cli.js",
+  "files": [
+    "bin/",
+    "dist/",
+    "bridge/dist/",
+    "bridge/package.json",
+    "bridge/tsconfig.json",
+    "config/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run build:bridge && npm run build:cli",
+    "build:bridge": "cd bridge && npx tsc",
+    "build:cli": "npx tsc -p tsconfig.json",
+    "postinstall": "cd bridge && npm install --no-audit --no-fund 2>/dev/null || true",
+    "start": "node dist/cli.js",
+    "dev": "npx tsx src/cli.ts",
+    "test": "npx vitest run",
+    "test:watch": "npx vitest",
+    "lint": "npx eslint src/ bridge/src/ test/ bridge/test/ --ext .ts --max-warnings 50",
+    "typecheck": "npx tsc -p tsconfig.json --noEmit && cd bridge && npx tsc --noEmit",
+    "preflight": "npm run build && npm run typecheck && npm run lint && npm test && npm pack --dry-run && npm run check:release-hygiene",
+    "clean": "rm -rf dist bridge/dist coverage",
+    "test:unit": "npx vitest run --exclude \"test/docker*\"",
+    "check:release-hygiene": "bash scripts/check-release-hygiene.sh",
+    "test:real-gemini": "DEMONI_RUN_REAL_GEMINI_TESTS=1 npx vitest run test/real-gemini-cli.integration.test.ts 2>/dev/null || echo \"Real Gemini CLI tests require interactive terminal. Set DEMONI_RUN_REAL_GEMINI_TESTS=1 to enable.\""
+  },
+  "keywords": [
+    "gemini-cli",
+    "deepseek",
+    "cli",
+    "ai",
+    "coding-agent",
+    "demoni"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@google/gemini-cli": "^0.41.0",
+    "axios": "*",
+    "cors": "*",
+    "dotenv": "^16.4.5",
+    "express": "*",
+    "zod": "*"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.7",
+    "@typescript-eslint/eslint-plugin": "^8.59.3",
+    "@typescript-eslint/parser": "^8.59.3",
+    "eslint": "^9.39.4",
+    "tsx": "^4.20.3",
+    "typescript": "^5.4.5",
+    "vitest": "^3.2.4"
+  }
+}

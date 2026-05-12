@@ -1,0 +1,33 @@
+{
+  "default": "v4-flash-thinking",
+  "models": [
+    {
+      "id": "v4-flash",
+      "provider_model": "deepseek-v4-flash",
+      "thinking": false,
+      "group": "non-thinking",
+      "recommended_for": ["fast coding", "repo inspection", "daily edits"]
+    },
+    {
+      "id": "v4-flash-thinking",
+      "provider_model": "deepseek-v4-flash",
+      "thinking": true,
+      "group": "thinking",
+      "recommended_for": ["fast reasoning", "debugging", "planning"]
+    },
+    {
+      "id": "v4-pro",
+      "provider_model": "deepseek-v4-pro",
+      "thinking": false,
+      "group": "non-thinking",
+      "recommended_for": ["larger coding tasks", "reviews", "refactors"]
+    },
+    {
+      "id": "v4-pro-thinking",
+      "provider_model": "deepseek-v4-pro",
+      "thinking": true,
+      "group": "thinking",
+      "recommended_for": ["hard debugging", "architecture", "deep review"]
+    }
+  ]
+}

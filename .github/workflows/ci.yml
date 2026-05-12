@@ -1,0 +1,45 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install root deps
+        run: npm ci
+      - name: Install bridge deps
+        run: cd bridge && npm ci
+      - name: Build
+        run: npm run build
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t demoni .
+      - name: Smoke test — help
+        run: docker run --rm demoni --help
+      - name: Smoke test — version
+        run: docker run --rm demoni --version
+      - name: Smoke test — with key
+        run: docker run --rm -e DEEPSEEK_API_KEY=sk-test-key demoni --version
+      - name: Smoke test — bridge server starts
+        run: |
+          docker run --rm -d --name demoni-bridge-test \
+            --entrypoint node \
+            -e DEEPSEEK_API_KEY=sk-test-key \
+            demoni /opt/demoni/bridge/dist/server.js
+          sleep 2
+          docker exec demoni-bridge-test curl -sf http://127.0.0.1:7654/health
+          docker stop demoni-bridge-test

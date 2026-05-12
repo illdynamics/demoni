@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -f "${script_dir}/src/cli.ts" ]]; then
+  exec npx --prefix "${script_dir}" tsx "${script_dir}/src/cli.ts" "$@"
+fi
+exec node "${script_dir}/dist/cli.js" "$@"
