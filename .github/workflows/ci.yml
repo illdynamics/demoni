@@ -20,7 +20,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
       - name: Test
-        run: npm test
+        run: npm run test:ci
 
   docker:
     runs-on: ubuntu-latest

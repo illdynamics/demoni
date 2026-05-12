@@ -30,6 +30,7 @@
     "typecheck": "npx tsc -p tsconfig.json --noEmit && cd bridge && npx tsc --noEmit",
     "preflight": "npm run build && npm run typecheck && npm run lint && npm test && npm pack --dry-run && npm run check:release-hygiene",
     "clean": "rm -rf dist bridge/dist coverage",
+    "test:ci": "npx vitest run --exclude 'test/docker*'",
     "test:unit": "npx vitest run --exclude \"test/docker*\"",
     "check:release-hygiene": "bash scripts/check-release-hygiene.sh",
     "test:real-gemini": "DEMONI_RUN_REAL_GEMINI_TESTS=1 npx vitest run test/real-gemini-cli.integration.test.ts 2>/dev/null || echo \"Real Gemini CLI tests require interactive terminal. Set DEMONI_RUN_REAL_GEMINI_TESTS=1 to enable.\""
