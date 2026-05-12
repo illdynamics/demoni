@@ -37,7 +37,7 @@ jobs:
       - name: VERSION consistency check
         run: |
           if [ -f VERSION ]; then
-            VER=$(cat VERSION | tr -d '[:space:]')
+            VER=$(cat VERSION)
             echo "VERSION file: ${VER}"
             if ! echo "${VER}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+'; then
               echo "FAIL: VERSION does not look like a semver tag (vX.Y.Z)"
@@ -176,7 +176,7 @@ jobs:
 
       - name: Verify VERSION matches tag
         run: |
-          VERSION_IN_REPO=$(cat VERSION | tr -d '[:space:]')
+          VERSION_IN_REPO=$(cat VERSION)
           echo "VERSION file: ${VERSION_IN_REPO}"
           echo "Tag:          ${TAG}"
           if [ "${VERSION_IN_REPO}" != "${TAG}" ]; then
