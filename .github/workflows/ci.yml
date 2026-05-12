@@ -39,6 +39,7 @@ jobs:
           docker run --rm -d --name demoni-bridge-test \
             --entrypoint node \
             -e DEEPSEEK_API_KEY=sk-test-key \
+            -e DEMONI_BRIDGE_AUTO_START=1 \
             demoni /opt/demoni/bridge/dist/server.js
           sleep 2
           docker exec demoni-bridge-test curl -sf http://127.0.0.1:7654/health
