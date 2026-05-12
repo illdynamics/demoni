@@ -2,13 +2,12 @@
 
 **Production-grade Gemini CLI drop-in replacement routing to DeepSeek V4 models.**
 
-Run `demoni` instead of `gemini`. Same flags, same interactive behavior, same tool calls. But your prompts go to DeepSeek V4 models via your `DEEPSEEK_API_KEY` — no Google account or API key needed.
+Run `demoni` instead of `gemini`. Same flags, same interactive behavior, same tool calls.
+But your prompts go to DeepSeek V4 models via your `DEEPSEEK_API_KEY` — no Google account or API key needed.
 
 <p align="center">
   <img src="./demoni.jpg" alt="Demoni" width="80%">
 </p>
-
-![CI](https://github.com/illdynamics/demoni/actions/workflows/ci.yml/badge.svg)
 
 Current version: `v0.2.1` (from [`VERSION`](./VERSION)).
 
