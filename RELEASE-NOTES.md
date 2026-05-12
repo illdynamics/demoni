@@ -19,6 +19,10 @@
 - **Lint**: ESLint configured; `npm run lint` passes with 0 errors
 - **Preflight**: `npm run preflight` now includes build + typecheck + lint + test + pack + hygiene
 
+### Developer Experience
+- **Bootstrap script**: Added `./demoni` bootstrap/installer — `./demoni build` builds the Docker/Podman image, `./demoni install` installs to ~/.config/demoni and ~/bin/demoni for direct PATH access
+- **CI fixes**: Docker tests excluded from test job (no Docker daemon), bridge auto-start flag added to docker job
+
 ### Testing
 - **Real Gemini CLI E2E**: Created `test/real-gemini-cli.integration.test.ts` — proves full flow: mock DeepSeek → bridge → real Gemini CLI, no Google auth, no `[DONE]` crash (gated: `DEMONI_RUN_REAL_GEMINI_TESTS=1`)
 - **144 tests passing**, 7 skipped (6 Docker + 1 real Gemini E2E)

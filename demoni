@@ -1,8 +1,217 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ───────────────────────────────────────────────────────────────────
+# Demoni Bootstrap — build & install the Demoni AI coding agent
+# ───────────────────────────────────────────────────────────────────
+# Usage:
+#   ./demoni build       Build the Docker/Podman image
+#   ./demoni install     Install demoni to ~/.config/demoni & ~/bin/demoni
+#   ./demoni uninstall   Remove demoni from ~/.config/demoni & ~/bin/demoni
+# ───────────────────────────────────────────────────────────────────
+set -euo pipefail
 
-if [[ -f "${script_dir}/src/cli.ts" ]]; then
-  exec npx --prefix "${script_dir}" tsx "${script_dir}/src/cli.ts" "$@"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_DIR="${HOME}/.config/demoni"
+BIN_DIR="${HOME}/bin"
+IMAGE_NAME="demoni"
+VERSION="0.2.1"
+CONTAINER_ENGINE=""
+
+# ── Detect container engine (podman preferred, docker fallback) ──
+
+detect_engine() {
+  if command -v podman &>/dev/null; then
+    CONTAINER_ENGINE="podman"
+  elif command -v docker &>/dev/null; then
+    CONTAINER_ENGINE="docker"
+  else
+    echo "✗ Neither podman nor docker found. Install one to continue." >&2
+    echo "  macOS:  brew install podman" >&2
+    echo "  Linux:  apt install podman  or  apt install docker.io" >&2
+    exit 1
+  fi
+}
+
+# ── Check if the demoni image exists in the local registry ──
+
+image_exists() {
+  ${CONTAINER_ENGINE} image inspect "${IMAGE_NAME}:latest" &>/dev/null 2>&1
+}
+
+# ── Build the container image ──
+
+cmd_build() {
+  detect_engine
+  echo "⚙  Building Demoni v${VERSION} ${CONTAINER_ENGINE} image..."
+  cd "${SCRIPT_DIR}"
+  ${CONTAINER_ENGINE} build -t "${IMAGE_NAME}:latest" -t "${IMAGE_NAME}:v${VERSION}" .
+  echo "✓ Demoni image built successfully (demoni:latest, demoni:v${VERSION})"
+}
+
+# ── Install demoni to ~/.config/demoni and ~/bin/demoni ──
+
+cmd_install() {
+  detect_engine
+
+  # Build image if not present
+  if ! image_exists; then
+    echo "→ Image not found, building first..."
+    echo ""
+    cmd_build
+    echo ""
+  fi
+
+  # ── Create ~/.config/demoni ──────────────────────────────────
+
+  mkdir -p "${CONFIG_DIR}"
+
+  # version.json
+  cat > "${CONFIG_DIR}/version.json" << EOF
+{
+  "version": "${VERSION}",
+  "installed_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "install_method": "bootstrap"
+}
+EOF
+
+  # installation_id (stable UUID, generated once)
+  if [[ ! -f "${CONFIG_DIR}/installation_id" ]]; then
+    uuidgen 2>/dev/null > "${CONFIG_DIR}/installation_id" || \
+      cat /dev/urandom | LC_ALL=C tr -dc 'a-f0-9' | head -c 8 > "${CONFIG_DIR}/installation_id"
+  fi
+
+  # Copy model catalog & configs
+  mkdir -p "${CONFIG_DIR}/config"
+  cp "${SCRIPT_DIR}/config/model-catalog.json" "${CONFIG_DIR}/config/"
+
+  # Runtime directories (mounted into container)
+  mkdir -p "${CONFIG_DIR}/log"
+  mkdir -p "${CONFIG_DIR}/run"
+  mkdir -p "${CONFIG_DIR}/gemini-cli-home"
+
+  # ── Create ~/bin/demoni wrapper ──────────────────────────────
+
+  mkdir -p "${BIN_DIR}"
+
+  cat > "${BIN_DIR}/demoni" << 'WRAPPER_EOF'
+#!/usr/bin/env bash
+# ───────────────────────────────────────────────────────────────────
+# Demoni — AI coding agent (containerized)
+# ───────────────────────────────────────────────────────────────────
+set -euo pipefail
+
+CONFIG_DIR="${HOME}/.config/demoni"
+IMAGE_NAME="demoni"
+CONTAINER_ENGINE=""
+
+# Detect container engine
+if command -v podman &>/dev/null; then
+  CONTAINER_ENGINE="podman"
+elif command -v docker &>/dev/null; then
+  CONTAINER_ENGINE="docker"
+else
+  echo "✗ Neither podman nor docker found." >&2
+  exit 1
 fi
-exec node "${script_dir}/dist/cli.js" "$@"
+
+# Ensure the image exists
+if ! ${CONTAINER_ENGINE} image inspect "${IMAGE_NAME}:latest" &>/dev/null 2>&1; then
+  echo "✗ Demoni image not found. Run './demoni install' from the repo first." >&2
+  exit 1
+fi
+
+# Ensure runtime dirs exist
+mkdir -p "${CONFIG_DIR}/log" "${CONFIG_DIR}/run" "${CONFIG_DIR}/gemini-cli-home"
+
+# Run demoni container
+exec ${CONTAINER_ENGINE} run --rm -i \
+  ${DEEPSEEK_API_KEY:+-e DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY}"} \
+  ${DEMONI_MODEL:+-e DEMONI_MODEL="${DEMONI_MODEL}"} \
+  ${DEMONI_REASONING_EFFORT:+-e DEMONI_REASONING_EFFORT="${DEMONI_REASONING_EFFORT}"} \
+  -v "${PWD}:/workspace" \
+  -v "${CONFIG_DIR}:/home/demoni/.demoni" \
+  "${IMAGE_NAME}:latest" \
+  "$@"
+WRAPPER_EOF
+
+  chmod +x "${BIN_DIR}/demoni"
+
+  # ── Print success ────────────────────────────────────────────
+
+  echo ""
+  echo "╔══════════════════════════════════════════════════════════════╗"
+  echo "║  ✓ Demoni v${VERSION} installed successfully!              ║"
+  echo "╠══════════════════════════════════════════════════════════════╣"
+  echo "║  Config:  ${CONFIG_DIR}"
+  echo "║  Binary:  ${BIN_DIR}/demoni"
+  echo "╠══════════════════════════════════════════════════════════════╣"
+  echo "║  Make sure ~/bin is in your PATH:                           ║"
+  echo "║    export PATH=\"\${HOME}/bin:\${PATH}\"                   ║"
+  echo "║                                                              ║"
+  echo "║  Set your DeepSeek API key:                                  ║"
+  echo "║    export DEEPSEEK_API_KEY=\"sk-...\"                        ║"
+  echo "║                                                              ║"
+  echo "║  Then run:                                                   ║"
+  echo "║    demoni --help                                             ║"
+  echo "╚══════════════════════════════════════════════════════════════╝"
+  echo ""
+
+  # Check if ~/bin is in PATH
+  if [[ ":${PATH}:" != *":${BIN_DIR}:"* ]]; then
+    echo "⚠  ~/bin is NOT in your current PATH."
+    echo "   Add this to your ~/.zshrc or ~/.bashrc:"
+    echo ""
+    echo "     export PATH=\"\${HOME}/bin:\${PATH}\""
+    echo ""
+  fi
+}
+
+# ── Uninstall ──────────────────────────────────────────────────
+
+cmd_uninstall() {
+  echo "Removing Demoni..."
+
+  rm -f "${BIN_DIR}/demoni"
+  rm -rf "${CONFIG_DIR}"
+
+  echo "✓ Demoni uninstalled."
+  echo "  To also remove the container image:"
+  echo "    docker rmi demoni:latest demoni:v${VERSION}"
+}
+
+# ── Main ───────────────────────────────────────────────────────
+
+case "${1:-}" in
+  build)
+    cmd_build
+    ;;
+  install)
+    cmd_install
+    ;;
+  uninstall)
+    cmd_uninstall
+    ;;
+  -h|--help|help)
+    echo "Demoni v${VERSION} — bootstrap & installer"
+    echo ""
+    echo "Usage:"
+    echo "  ./demoni build       Build the Docker/Podman image"
+    echo "  ./demoni install     Install demoni to ~/.config/demoni & ~/bin/demoni"
+    echo "  ./demoni uninstall   Remove demoni from ~/.config/demoni & ~/bin/demoni"
+    echo ""
+    echo "After install, run:   demoni --help"
+    ;;
+  *)
+    echo "Demoni v${VERSION} — bootstrap & installer"
+    echo ""
+    echo "Usage:"
+    echo "  ./demoni build       Build the Docker/Podman image"
+    echo "  ./demoni install     Install demoni to ~/.config/demoni & ~/bin/demoni"
+    echo "  ./demoni uninstall   Remove demoni from ~/.config/demoni & ~/bin/demoni"
+    echo ""
+    echo "Quick start:"
+    echo "  ./demoni install"
+    echo "  export PATH=\"\${HOME}/bin:\${PATH}\""
+    echo "  export DEEPSEEK_API_KEY=\"sk-...\""
+    echo "  demoni --help"
+    ;;
+esac
