@@ -5,7 +5,7 @@ Get up and running with Demoni in under a minute.
 ## 1. Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/illdynamics/demoni/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/illdynamics/demoni/main/scripts/install.sh | bash
 ```
 
 This downloads the latest release, builds the container image, installs `@google/gemini-cli` globally, and puts the `demoni` command in `~/bin/demoni`.

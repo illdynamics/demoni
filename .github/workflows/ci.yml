@@ -17,22 +17,37 @@ jobs:
 
       - name: Shell syntax (bash -n)
         run: |
-          for f in demoni install.sh bin/demoni bin/demoni-entrypoint bin/demoni-healthcheck bin/demoni-print-config; do
+          for f in demoni scripts/install.sh bin/demoni bin/demoni-entrypoint bin/demoni-healthcheck bin/demoni-print-config; do
             [ -f "$f" ] || continue
             bash -n "$f" || { echo "FAIL: bash -n $f"; exit 1; }
           done
           echo "All shell syntax OK"
 
       - name: ShellCheck
-        run: shellcheck demoni install.sh bin/demoni bin/demoni-entrypoint bin/demoni-healthcheck bin/demoni-print-config || true
+        run: shellcheck demoni scripts/install.sh bin/demoni bin/demoni-entrypoint bin/demoni-healthcheck bin/demoni-print-config || true
 
       - name: Executable permissions
         run: |
-          for f in demoni install.sh bin/demoni bin/demoni-entrypoint bin/demoni-healthcheck bin/demoni-print-config; do
+          for f in demoni scripts/install.sh bin/demoni bin/demoni-entrypoint bin/demoni-healthcheck bin/demoni-print-config; do
             [ -f "$f" ] || continue
             test -x "$f" || { echo "FAIL: not executable — $f"; exit 1; }
           done
           echo "All executables OK"
+
+      - name: VERSION consistency check
+        run: |
+          if [ -f VERSION ]; then
+            VER=$(cat VERSION | tr -d '[:space:]')
+            echo "VERSION file: ${VER}"
+            if ! echo "${VER}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+'; then
+              echo "FAIL: VERSION does not look like a semver tag (vX.Y.Z)"
+              exit 1
+            fi
+            echo "VERSION format: OK"
+          else
+            echo "FAIL: VERSION file missing"
+            exit 1
+          fi
 
       - name: Secret scan
         run: |
@@ -63,13 +78,11 @@ jobs:
       - name: Install bridge deps
         run: cd bridge && npm ci
       - name: Build
-        run: npm run build
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint
-        run: npm run lint
+        run: ./demoni build
+      - name: Typecheck / Lint
+        run: ./demoni lint
       - name: Test
-        run: npm run test:ci
+        run: ./demoni test
 
   # ═══════════════════════════════════════════════════════════════════
   # Package — verify npm pack hygiene
@@ -87,7 +100,7 @@ jobs:
       - name: Install root deps
         run: npm ci
       - name: Build
-        run: npm run build
+        run: ./demoni build
       - name: Package dry-run
         run: npm pack --dry-run
       - name: Release hygiene
@@ -137,6 +150,9 @@ jobs:
 
   # ═══════════════════════════════════════════════════════════════════
   # Release — only runs on version tags (v*), after all 4 checks pass
+  #
+  # Archive naming: demoni-<tag>.zip  (e.g. demoni-v0.2.1.zip)
+  # The VERSION file at repo root is the single source of truth.
   # ═══════════════════════════════════════════════════════════════════
   release:
     name: Release
@@ -158,6 +174,17 @@ jobs:
           echo "archive=${ARCHIVE}" >> "${GITHUB_ENV}"
           echo "tag=${TAG}" >> "${GITHUB_ENV}"
 
+      - name: Verify VERSION matches tag
+        run: |
+          VERSION_IN_REPO=$(cat VERSION | tr -d '[:space:]')
+          echo "VERSION file: ${VERSION_IN_REPO}"
+          echo "Tag:          ${TAG}"
+          if [ "${VERSION_IN_REPO}" != "${TAG}" ]; then
+            echo "FAIL: VERSION file (${VERSION_IN_REPO}) does not match tag (${TAG})"
+            exit 1
+          fi
+          echo "VERSION matches tag: OK"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -175,10 +202,16 @@ jobs:
             ./demoni install
             ```
 
+            ### Or install from the web
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/illdynamics/demoni/main/scripts/install.sh | bash
+            ```
+
             ### Quick Start
 
             ```bash
-            export PATH="${HOME}/bin:${PATH}"
+            export PATH="\${HOME}/bin:\${PATH}"
             export DEEPSEEK_API_KEY="sk-..."
             demoni --help
             ```

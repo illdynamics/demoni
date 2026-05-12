@@ -21,7 +21,7 @@ Demoni runs in **process mode** by default (`node` child process — no containe
 ### Option 1: curl | bash (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/illdynamics/demoni/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/illdynamics/demoni/main/scripts/install.sh | bash
 ```
 
 This downloads the latest release zip, extracts it, builds the container image, and installs the `demoni` command to `~/bin/demoni`. The `@google/gemini-cli` npm package is installed automatically.

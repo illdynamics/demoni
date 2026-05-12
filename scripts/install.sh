@@ -3,14 +3,17 @@
 # Demoni Installer — curl | bash oneliner
 # ───────────────────────────────────────────────────────────────────
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/illdynamics/demoni/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/illdynamics/demoni/main/scripts/install.sh | bash
 #
-# Downloads the latest release zip, extracts it, and runs ./demoni install.
+# Downloads the release zip matching the version in VERSION, extracts
+# it, and runs ./demoni install.
+#
+# One source of truth: the VERSION file at the repo root.
 # ───────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 REPO="illdynamics/demoni"
-GITHUB_API="https://api.github.com/repos/${REPO}"
+RAW_BASE="https://raw.githubusercontent.com/${REPO}/main"
 TMP_DIR=""
 
 # ── Cleanup on exit ──────────────────────────────────────────────
@@ -66,26 +69,18 @@ check_prereqs() {
   fi
 }
 
-# ── Get latest release tag ───────────────────────────────────────
+# ── Get version from VERSION file ────────────────────────────────
+# One source of truth — reads VERSION from the default branch.
 
-get_latest_tag() {
-  local tag
-  tag=$(curl -fsSL "${GITHUB_API}/releases/latest" 2>/dev/null | \
-    grep '"tag_name":' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
+get_version() {
+  local ver
+  ver=$(curl -fsSL "${RAW_BASE}/VERSION" 2>/dev/null | tr -d '[:space:]')
 
-  if [[ -z "${tag}" ]]; then
-    # Fallback: try git tags
-    tag=$(curl -fsSL "${GITHUB_API}/git/refs/tags" 2>/dev/null | \
-      grep '"ref":' | tail -1 | sed -E 's/.*"ref": *"refs\/tags\/([^"]+)".*/\1/')
+  if [[ -z "${ver}" ]]; then
+    error "Could not read VERSION from ${RAW_BASE}/VERSION"
   fi
 
-  if [[ -z "${tag}" ]]; then
-    error "Could not determine latest release tag. Please install manually:"
-    echo "  git clone https://github.com/${REPO}.git"
-    echo "  cd demoni && ./demoni install"
-  fi
-
-  echo "${tag}"
+  echo "${ver}"
 }
 
 # ── Main ─────────────────────────────────────────────────────────
@@ -102,11 +97,11 @@ main() {
 
   check_prereqs
 
-  # Get latest tag
-  info "Fetching latest release..."
+  # Read version from VERSION file on the default branch
+  info "Fetching version..."
   local tag
-  tag=$(get_latest_tag)
-  info "Latest release: ${tag}"
+  tag=$(get_version)
+  info "Version: ${tag}"
 
   # Download and extract
   TMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t demoni-install)
