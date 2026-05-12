@@ -2,6 +2,12 @@
 
 **Production-grade Gemini CLI drop-in replacement routing to DeepSeek V4 models.**
 
+<p align="center">
+  <img src="./demoni.jpg" alt="Demoni" width="80%">
+</p>
+
+Current version: v0.2.1
+
 Run `demoni` instead of `gemini`. Same flags, same interactive behavior, same tool calls. But your prompts go to DeepSeek V4 models via your `DEEPSEEK_API_KEY` — no Google account needed.
 
 ## Quick Start
