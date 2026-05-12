@@ -1,140 +1,168 @@
 # Troubleshooting
 
-## `DEEPSEEK_API_KEY` Missing
+## `DEEPSEEK_API_KEY` Not Set
 
-Symptoms:
+**Symptoms:**
+- `demoni` exits immediately with "DEEPSEEK_API_KEY is required"
+- Any prompt or interactive mode fails at launch
 
-- `demoni:dev ping` fails immediately.
-- Prompt/interactive mode exits before launch.
-
-Fix:
-
+**Fix:**
 ```bash
-export DEEPSEEK_API_KEY='sk-...'
+export DEEPSEEK_API_KEY="sk-..."
 ```
+
+Add this to `~/.zshrc` or `~/.bashrc` to make it permanent.
 
 ## Gemini CLI Asks for Google Login
 
-Demoni should not use Google login.
+Demoni should suppress Google OAuth entirely. If the browser opens for login:
 
-Check:
-
+**Check the bridge is running:**
 ```bash
-podman run --rm -it -e DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" -v "$PWD:/workspace:Z" -w /workspace demoni:dev config
+demoni --help
+# ^ should work without prompting for Google login
 ```
 
-Expected:
-
-- `GEMINI_CLI_HOME=/home/demoni/.demoni-gemini`
-- `GEMINI_API_KEY=demoni-local-placeholder`
-- `GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:7654`
-
-If not, remove custom overrides and re-run with defaults.
-
-## Demoni Using Real `~/.gemini`
-
-Demoni-supported paths must not use host `~/.gemini`.
-
-Check `config` output and ensure:
-
-- `DEMONI_GEMINI_HOME=/home/demoni/.demoni-gemini`
-- `SETTINGS_PATH=/home/demoni/.demoni-gemini/settings.json`
-
-## Bridge Start Command Cannot Be Detected
-
-Set an explicit command:
-
+**Verify environment variables are correct:**
 ```bash
-podman run ... -e DEMONI_BRIDGE_CMD='node /opt/demoni/bridge/dist/server.js' demoni:dev doctor
+# Check the config
+demoni doctor  # if available, otherwise inspect env
+echo $GOOGLE_GEMINI_BASE_URL  # should not be set manually
 ```
 
-## Wrong Bridge Port
+**Expected behavior:**
+- `GEMINI_API_KEY` is set internally to a local proxy key (random UUID)
+- `GOOGLE_GEMINI_BASE_URL` points to `http://127.0.0.1:<ephemeral-port>`
+- `GEMINI_CLI_HOME` is isolated to `~/.demoni/gemini-cli-home/`
+- Google auth env vars (`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`) are unset
 
-Set both host and port explicitly:
-
+**If it still happens:**
 ```bash
-podman run ... \
-  -e DEMONI_BRIDGE_HOST=127.0.0.1 \
-  -e DEMONI_BRIDGE_PORT=8765 \
-  demoni:dev doctor
+DEMONI_DEBUG=1 demoni "test" 2>&1 | head -50
 ```
 
-## Gemini CLI Hits Wrong Endpoint
+File an issue with the debug output.
 
-Ensure `GOOGLE_GEMINI_BASE_URL` points at the local bridge URL shown by `config`.
+## Port Conflict
 
-## Unsupported Gemini GenerateContent Request Shape
+**Symptom:** Bridge fails to start with EADDRINUSE error.
 
-If upstream Gemini request formats change, bridge translation may fail with 4xx/5xx.
-
-Run:
+**Fix:** Demoni uses ephemeral ports by default (automatically finds a free port). If you have conflicting software on port 7654:
 
 ```bash
-podman run ... demoni:dev doctor
-podman run ... demoni:dev ping
+# Set a specific port
+export DEMONI_BRIDGE_PORT=8765
+
+# Or let it auto-assign (default)
+unset DEMONI_BRIDGE_PORT
 ```
 
-Then inspect bridge logs inside container at `/var/log/demoni/bridge.log`.
+## DeepSeek 401 / Authentication Failed
 
-## Model Unsupported by Bridge / Non-DeepSeek Model Rejected
+**Symptom:** Bridge starts but API calls return 401.
 
-Demoni only supports:
+**Fix:**
+```bash
+# Check your key is set
+echo "${DEEPSEEK_API_KEY:0:10}..."  # should show first 10 chars
 
-- `deepseek-v4-flash`
-- `deepseek-v4-flash-thinking`
-- `deepseek-v4-pro`
-- `deepseek-v4-pro-thinking`
+# Verify it works directly
+curl -s https://api.deepseek.com/v1/models \
+  -H "Authorization: Bearer $DEEPSEEK_API_KEY" | head -5
 
-Any other model ID is rejected.
+# If empty response, your key is invalid or has no credits
+```
 
-## Model Menu Not Fully Restrictable
+## Model Not Found / "Unsupported Demoni Model"
 
-Gemini CLI upstream model menu UI cannot be fully restricted without forking Gemini CLI.
+**Symptom:** `demoni -m <model>` gives an error about unsupported model.
 
-Current behavior:
+**Fix:** Only these four models are supported:
 
-1. Demoni-generated catalog is DeepSeek-only.
-2. Wrapper-level model switching is DeepSeek-only.
-3. Bridge rejects non-DeepSeek model IDs.
-4. `doctor` prints a warning documenting this upstream limitation.
-
-## Thinking Mode Backend Limitations
-
-Demoni maps logical thinking aliases to DeepSeek `thinking.type=enabled` with `reasoning_effort=high|max`.
-
-If a model/backend path does not honor thinking reliably, use non-thinking aliases:
-
-- `deepseek-v4-flash`
-- `deepseek-v4-pro`
-
-## Thinking + Tool Calls (`reasoning_content`) Errors
-
-DeepSeek thinking+tool loops may require strict reasoning context replay.
-
-If you see repeated 400 errors in tool loops, run with non-thinking mode first to isolate:
+| Model | Description |
+|-------|-------------|
+| `v4-flash` | Fast, thinking off |
+| `v4-flash-thinking` | Fast with reasoning |
+| `v4-pro` | Stronger, thinking off |
+| `v4-pro-thinking` | Stronger with deep reasoning |
 
 ```bash
-podman run ... demoni:dev --model deepseek-v4-flash "..."
+# Use one of the above
+demoni -m v4-flash "hello"
 ```
 
-## Podman SELinux Volume Issues
+## Bridge Fails to Start
 
-Use `:Z` on bind mounts:
+**Symptom:** `demoni` hangs or exits early with bridge-related errors.
+
+**Fix:**
+```bash
+# Check if Node.js is available
+node --version  # needs 20+
+
+# Check if bridge dependencies are built
+ls bridge/dist/server.js  # should exist
+
+# Rebuild if needed
+cd bridge && npm install && npx tsc && cd ..
+
+# Try process mode explicitly
+DEMONI_BRIDGE_MODE=process DEMONI_DEBUG=1 demoni --help
+```
+
+## Container Mode Issues
+
+If you're using container bridge mode (not the default process mode):
+
+**Podman SELinux:**
+```bash
+./demoni build  # uses podman or docker automatically
+```
+
+If you build manually with Podman and get permission errors:
+```bash
+# Use :Z on bind mounts
+docker run --rm -it -v "$PWD:/workspace:Z" demoni:latest "test"
+```
+
+**Rootless Podman networking:**
+```bash
+# Keep bridge host at 127.0.0.1 inside container
+export DEMONI_BRIDGE_HOST=127.0.0.1
+```
+
+## Streaming Stops Early
+
+**Symptom:** Long responses cut off mid-stream.
+
+**Fix:**
+```bash
+# Increase the stream idle timeout (default is usually sufficient)
+export DEMONI_STREAM_IDLE_TIMEOUT_MS=1200000  # 20 minutes
+```
+
+## Debugging
+
+Enable debug logging for detailed output:
 
 ```bash
--v "$PWD:/workspace:Z"
+DEMONI_DEBUG=1 demoni "test prompt"
 ```
 
-## Rootless Podman Networking Weirdness
+Log files are stored in:
+```
+~/.demoni/log/demoni.log    # Wrapper logs
+~/.demoni/log/bridge.log    # Bridge logs
+```
 
-If localhost routing behaves unexpectedly in your environment:
+## GitHub Issues
 
-1. Keep bridge host at `127.0.0.1` inside container.
-2. Avoid host network mode.
-3. Re-test with `demoni:dev doctor` and `demoni:dev ping`.
+If none of the above helps, file an issue at:
 
-## Dangerous Mode Not Fully Supported by Installed Gemini CLI
+https://github.com/illdynamics/demoni/issues
 
-Demoni requests `--approval-mode yolo` by default.
-
-If your installed Gemini CLI changes approval/sandbox semantics, Demoni falls back to the closest supported behavior and `doctor` output should be reviewed.
+Include:
+- Output of `node --version`
+- Output of `demoni --version` (if it gets that far)
+- Debug output with `DEMONI_DEBUG=1`
+- Your OS and container runtime (if applicable)

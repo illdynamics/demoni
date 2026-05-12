@@ -51,6 +51,23 @@ Demoni treats `@google/gemini-cli` as an unmodified upstream dependency. All int
 - **Local HTTP bridge** that speaks Gemini REST API on the inbound side and DeepSeek Chat Completions on the outbound side
 - **Process spawning** — the wrapper runs Gemini CLI as a child process
 
+## Bootstrap Script
+
+The [`./demoni`](../demoni) script at the repo root handles build and install:
+
+```bash
+# Build the container image (Docker or Podman)
+./demoni build
+
+# Install to ~/.config/demoni and ~/bin/demoni, auto-installs @google/gemini-cli
+./demoni install
+
+# Remove from system
+./demoni uninstall
+```
+
+The `install.sh` one-liner wraps all of this — it fetches the release zip and calls `./demoni install` automatically.
+
 ## Bridge Launch Modes (`DEMONI_BRIDGE_MODE`)
 
 How the bridge process gets started:
@@ -61,6 +78,26 @@ How the bridge process gets started:
 | `process` | Start bridge as a local Node.js child process on 127.0.0.1:{free port}. No Docker/Podman needed. **This is the preferred path.** |
 | `external` | Do not start any bridge. Use DEMONI_BRIDGE_URL. User must have a bridge running. |
 | `container` | Start bridge in a Docker or Podman container. Fallback if process mode can't work. |
+
+## Container Image
+
+A Dockerfile is provided for containerized deployments and container bridge mode:
+
+```bash
+# Build via the bootstrap script (recommended)
+./demoni build
+
+# Or build directly
+docker build -t demoni:latest .
+
+# Run in a container (process mode is preferred)
+docker run --rm -it \
+  -e DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
+  -v "$PWD:/workspace" \
+  demoni:latest "explain this repo"
+```
+
+Container mode is a fallback — **process mode is the default and preferred path** (no container needed).
 
 ## Translator Modes (`DEMONI_TRANSLATOR_MODE`)
 
@@ -96,6 +133,8 @@ User-facing models → DeepSeek backend:
 | `v4-pro-thinking` | `deepseek-v4-pro` | enabled |
 
 All model list endpoints (`/v1beta/models`, `/v1/models`) return only these four models. Google/Gemini models are never exposed.
+
+The complete model catalog is in [`config/model-catalog.json`](../config/model-catalog.json).
 
 ## Endpoint Surface
 
@@ -142,17 +181,3 @@ The bridge exposes these Gemini-compatible REST endpoints:
 └── gemini-cli-home/         # Isolated Gemini CLI state
     └── settings.json        # Forces API-key auth, disables OAuth
 ```
-
-## Docker
-
-A Dockerfile is provided for containerized deployments or container bridge mode:
-
-```bash
-docker build -t demoni:dev .
-docker run --rm -it \
-  -e DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
-  -v "$PWD:/workspace" \
-  demoni:dev "explain this repo"
-```
-
-Container mode is a fallback — process mode is the default and preferred path.

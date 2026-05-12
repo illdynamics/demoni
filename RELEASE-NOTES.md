@@ -21,12 +21,13 @@
 
 ### CI/CD
 - **Extended workflow**: Added static checks job (ShellCheck, bash -n, secret scan, executable permissions, git whitespace), package verification job (npm pack dry-run + release hygiene), and enhanced docker smoke tests (gemini CLI available, model catalog present, config generation)
+- **Release job moved into CI workflow**: The release step now lives inside `ci.yml` as a 5th job (`release`) with `needs: [static, test, package, docker]`, only firing on `v*` tags — visible as a distinct step in the pipeline UI instead of a hidden downstream workflow
 - **Gemini CLI auto-install**: `./demoni install` now detects `gemini`/`gemini-cli` and auto-installs `@google/gemini-cli` globally via npm if missing — one command does everything
 - **Repo cleanup**: Removed vendored `gemini-cli/` (204MB), `codeseeq/` (741MB), and reference folders `jeanclaude-github/`, `codeseeq-github/`
 
 ### Distribution
 - **curl | bash installer**: `install.sh` fetches the latest GitHub release zip, extracts it, and runs `./demoni install` — one command from zero to working demoni
-- **Release workflow**: New `.github/workflows/release.yml` auto-creates GitHub releases with zip archives on `v*` tags via `git archive`
+- **Release workflow**: Release job inside `ci.yml` auto-creates GitHub releases with zip archives on `v*` tags via `git archive`
 - **README overhaul**: Replaced npm install instructions with curl/git/manual install options; removed Docker section (now handled by `./demoni install`)
 
 ### Developer Experience
