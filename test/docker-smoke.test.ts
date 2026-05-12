@@ -43,6 +43,27 @@ function runInContainer(args: string[], env: Record<string, string> = {}): { std
   };
 }
 
+function runInContainerWithEntrypoint(
+  entrypoint: string,
+  args: string[],
+  env: Record<string, string> = {},
+): { stdout: string; stderr: string; exitCode: number } {
+  const envArgs: string[] = [];
+  for (const [k, v] of Object.entries(env)) {
+    envArgs.push('-e', `${k}=${v}`);
+  }
+  const result = spawnSync(
+    'docker',
+    ['run', '--rm', '--entrypoint', entrypoint, ...envArgs, IMAGE, ...args],
+    { encoding: 'utf-8', timeout: 60_000, maxBuffer: 10_000_000 },
+  );
+  return {
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    exitCode: result.status ?? -1,
+  };
+}
+
 // Only run if Docker is available
 const RUN_TESTS = dockerAvailable();
 
@@ -80,12 +101,16 @@ describe.runIf(RUN_TESTS)('Docker Smoke Test', () => {
   });
 
   it('bridge scripts are present', () => {
-    const result = runInContainer(['ls', '/opt/demoni/bridge/dist/server.js']);
+    // --entrypoint ls overrides the image ENTRYPOINT so we can
+    // check for file existence without invoking the Demoni CLI
+    const result = runInContainerWithEntrypoint('ls', ['/opt/demoni/bridge/dist/server.js']);
     expect(result.exitCode).toBe(0);
   });
 
   it('model catalog is present', () => {
-    const result = runInContainer(['cat', '/opt/demoni/config/model-catalog.json']);
+    // --entrypoint cat overrides the image ENTRYPOINT so we can
+    // check the catalog contents without invoking the Demoni CLI
+    const result = runInContainerWithEntrypoint('cat', ['/opt/demoni/config/model-catalog.json']);
     expect(result.stdout).toContain('v4-flash');
     expect(result.stdout).toContain('v4-pro');
     expect(result.exitCode).toBe(0);
