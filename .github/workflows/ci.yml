@@ -132,5 +132,5 @@ jobs:
           echo "CLI config generation: OK"
       - name: Smoke — model catalog in container
         run: |
-          docker run --rm demoni:ci cat /opt/demoni/config/model-catalog.json | grep -q 'v4-flash'
+          docker run --rm --entrypoint cat demoni:ci /opt/demoni/config/model-catalog.json | grep -q 'v4-flash'
           echo "Model catalog present: OK"
