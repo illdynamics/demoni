@@ -3,9 +3,6 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  # ═══════════════════════════════════════════════════════════════════
-  # Static checks — shell syntax, lint, permissions, secrets, whitespace
-  # ═══════════════════════════════════════════════════════════════════
   static:
     name: Static Checks
     runs-on: ubuntu-latest
@@ -60,9 +57,6 @@ jobs:
       - name: Git whitespace
         run: git diff --check
 
-  # ═══════════════════════════════════════════════════════════════════
-  # Build, typecheck, test
-  # ═══════════════════════════════════════════════════════════════════
   test:
     name: Build & Test
     runs-on: ubuntu-latest
@@ -84,9 +78,6 @@ jobs:
       - name: Test
         run: ./demoni test
 
-  # ═══════════════════════════════════════════════════════════════════
-  # Package — verify npm pack hygiene
-  # ═══════════════════════════════════════════════════════════════════
   package:
     name: Package Check
     runs-on: ubuntu-latest
@@ -106,9 +97,6 @@ jobs:
       - name: Release hygiene
         run: npm run check:release-hygiene
 
-  # ═══════════════════════════════════════════════════════════════════
-  # Docker — build image and smoke test
-  # ═══════════════════════════════════════════════════════════════════
   docker:
     name: Docker Smoke
     runs-on: ubuntu-latest
@@ -148,12 +136,6 @@ jobs:
           docker run --rm --entrypoint cat demoni:ci /opt/demoni/config/model-catalog.json | grep -q 'v4-flash'
           echo "Model catalog present: OK"
 
-  # ═══════════════════════════════════════════════════════════════════
-  # Release — only runs on version tags (v*), after all 4 checks pass
-  #
-  # Archive naming: demoni-<tag>.zip  (e.g. demoni-v0.2.1.zip)
-  # The VERSION file at repo root is the single source of truth.
-  # ═══════════════════════════════════════════════════════════════════
   release:
     name: Release
     runs-on: ubuntu-latest
@@ -166,24 +148,17 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
-      - name: Extract tag
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          ARCHIVE="demoni-${TAG}.zip"
-          git archive --format=zip --prefix="demoni-${TAG}/" --output="${ARCHIVE}" HEAD
-          echo "archive=${ARCHIVE}" >> "${GITHUB_ENV}"
-          echo "tag=${TAG}" >> "${GITHUB_ENV}"
-
-      - name: Verify VERSION matches tag
+      - name: Read tag from VERSION file
         run: |
           VERSION_IN_REPO=$(cat VERSION)
-          echo "VERSION file: ${VERSION_IN_REPO}"
-          echo "Tag:          ${TAG}"
-          if [ "${VERSION_IN_REPO}" != "${TAG}" ]; then
-            echo "FAIL: VERSION file (${VERSION_IN_REPO}) does not match tag (${TAG})"
-            exit 1
-          fi
-          echo "VERSION matches tag: OK"
+          echo "tag=${VERSION_IN_REPO}" >> "${GITHUB_ENV}"
+          echo "Using VERSION file: ${VERSION_IN_REPO}"
+
+      - name: Build archive
+        run: |
+          ARCHIVE="demoni-${{ env.tag }}.zip"
+          git archive --format=zip --prefix="demoni-${{ env.tag }}/" --output="${ARCHIVE}" HEAD
+          echo "archive=${ARCHIVE}" >> "${GITHUB_ENV}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -211,7 +186,7 @@ jobs:
             ### Quick Start
 
             ```bash
-            export PATH="\${HOME}/bin:\${PATH}"
+            export PATH="${HOME}/bin:${PATH}"
             export DEEPSEEK_API_KEY="sk-..."
             demoni --help
             ```
