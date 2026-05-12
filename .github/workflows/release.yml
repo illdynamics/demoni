@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release archive
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          ARCHIVE="demoni-${TAG}.zip"
+          git archive --format=zip --prefix="demoni-${TAG}/" --output="${ARCHIVE}" HEAD
+          echo "archive=${ARCHIVE}" >> "${GITHUB_ENV}"
+          echo "tag=${TAG}" >> "${GITHUB_ENV}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.tag }}
+          name: "Demoni ${{ env.tag }}"
+          body: |
+            ## Demoni ${{ env.tag }}
+
+            ### Install
+
+            ```bash
+            curl -fsSL https://github.com/illdynamics/demoni/releases/download/${{ env.tag }}/demoni-${{ env.tag }}.zip -o demoni.zip
+            unzip demoni.zip
+            cd demoni-${{ env.tag }}
+            ./demoni install
+            ```
+
+            ### Quick Start
+
+            ```bash
+            export PATH="${HOME}/bin:${PATH}"
+            export DEEPSEEK_API_KEY="sk-..."
+            demoni --help
+            ```
+
+            See [RELEASE-NOTES.md](https://github.com/illdynamics/demoni/blob/main/RELEASE-NOTES.md) for full changelog.
+          files: ${{ env.archive }}
+          generate_release_notes: false

@@ -19,6 +19,11 @@
 - **Lint**: ESLint configured; `npm run lint` passes with 0 errors
 - **Preflight**: `npm run preflight` now includes build + typecheck + lint + test + pack + hygiene
 
+### Distribution
+- **curl | bash installer**: `install.sh` fetches the latest GitHub release zip, extracts it, and runs `./demoni install` — one command from zero to working demoni
+- **Release workflow**: New `.github/workflows/release.yml` auto-creates GitHub releases with zip archives on `v*` tags via `git archive`
+- **README overhaul**: Replaced npm install instructions with curl/git/manual install options; removed Docker section (now handled by `./demoni install`)
+
 ### Developer Experience
 - **Bootstrap script**: Added `./demoni` bootstrap/installer — `./demoni build` builds the Docker/Podman image, `./demoni install` installs to ~/.config/demoni and ~/bin/demoni for direct PATH access
 - **CI fixes**: Docker tests excluded from test job (no Docker daemon), bridge auto-start flag added to docker job

@@ -10,18 +10,56 @@ Current version: v0.2.1
 
 Run `demoni` instead of `gemini`. Same flags, same interactive behavior, same tool calls. But your prompts go to DeepSeek V4 models via your `DEEPSEEK_API_KEY` — no Google account needed.
 
-## Quick Start
+## Install
+
+Demoni runs inside a Docker or Podman container. Pick your install method:
+
+### Option 1: curl | bash (recommended)
 
 ```bash
-# 1. Install
-npm install -g demoni
+curl -fsSL https://raw.githubusercontent.com/illdynamics/demoni/main/install.sh | bash
+```
 
-# 2. Set your DeepSeek API key
+This downloads the latest release, extracts it, builds the container image, and installs the `demoni` command to `~/bin/demoni`.
+
+### Option 2: Git clone
+
+```bash
+git clone https://github.com/illdynamics/demoni.git
+cd demoni
+./demoni install
+```
+
+### Option 3: Manual download
+
+```bash
+# Grab the latest release from:
+#   https://github.com/illdynamics/demoni/releases/latest
+unzip demoni-v0.2.1.zip
+cd demoni-v0.2.1
+./demoni install
+```
+
+### After install
+
+```bash
+# Add ~/bin to PATH (add this to ~/.zshrc or ~/.bashrc)
+export PATH="${HOME}/bin:${PATH}"
+
+# Set your DeepSeek API key
 export DEEPSEEK_API_KEY="sk-..."
 
-# 3. Run instead of gemini
-demoni "explain this codebase"
+# You're ready!
+demoni --help
+demoni -y "explain this codebase"
 ```
+
+### Requirements
+
+- **Docker** or **Podman** — the demoni CLI runs inside a container
+- **curl** and **unzip** — for the curl | bash installer
+- **Linux** or **macOS** — Windows via WSL2 works too
+
 
 ## Model Selection
 
@@ -100,13 +138,6 @@ npm test
 
 # Start dev mode (uses tsx)
 npm run dev -- --help
-```
-
-## Docker
-
-```bash
-docker build -t demoni:dev .
-docker run --rm -e DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" demoni --help
 ```
 
 ## Troubleshooting
