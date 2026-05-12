@@ -19,6 +19,11 @@
 - **Lint**: ESLint configured; `npm run lint` passes with 0 errors
 - **Preflight**: `npm run preflight` now includes build + typecheck + lint + test + pack + hygiene
 
+### CI/CD
+- **Extended workflow**: Added static checks job (ShellCheck, bash -n, secret scan, executable permissions, git whitespace), package verification job (npm pack dry-run + release hygiene), and enhanced docker smoke tests (gemini CLI available, model catalog present, config generation)
+- **Gemini CLI auto-install**: `./demoni install` now detects `gemini`/`gemini-cli` and auto-installs `@google/gemini-cli` globally via npm if missing — one command does everything
+- **Repo cleanup**: Removed vendored `gemini-cli/` (204MB), `codeseeq/` (741MB), and reference folders `jeanclaude-github/`, `codeseeq-github/`
+
 ### Distribution
 - **curl | bash installer**: `install.sh` fetches the latest GitHub release zip, extracts it, and runs `./demoni install` — one command from zero to working demoni
 - **Release workflow**: New `.github/workflows/release.yml` auto-creates GitHub releases with zip archives on `v*` tags via `git archive`

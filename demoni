@@ -52,6 +52,35 @@ cmd_build() {
 cmd_install() {
   detect_engine
 
+  # ── Check for Gemini CLI ────────────────────────────────────
+
+  echo "→ Checking for Gemini CLI..."
+
+  GEMINI_FOUND=false
+  if command -v gemini &>/dev/null; then
+    GEMINI_FOUND=true
+    echo "  ✓ gemini CLI found: $(which gemini)"
+  elif command -v gemini-cli &>/dev/null; then
+    GEMINI_FOUND=true
+    echo "  ✓ gemini CLI found: $(which gemini-cli)"
+  fi
+
+  if [[ "${GEMINI_FOUND}" == "false" ]]; then
+    echo "  → gemini CLI not found. Installing @google/gemini-cli globally..."
+    if command -v npm &>/dev/null; then
+      npm install -g @google/gemini-cli || {
+        echo "  ✗ npm install failed. Please install manually:"
+        echo "    npm install -g @google/gemini-cli"
+        exit 1
+      }
+      echo "  ✓ @google/gemini-cli installed"
+    else
+      echo "  ✗ npm not found. Please install Node.js and npm first, then:"
+      echo "    npm install -g @google/gemini-cli"
+      exit 1
+    fi
+  fi
+
   # Build image if not present
   if ! image_exists; then
     echo "→ Image not found, building first..."
