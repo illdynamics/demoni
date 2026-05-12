@@ -2,6 +2,9 @@
 
 ## v0.2.1 (2026-05-12)
 
+### License Change
+- **Apache 2.0**: Relicensed from MIT to Apache License 2.0; LICENSE file replaced, package.json and README.md updated
+
 ### Release Blockers Fixed
 - **SSE streaming**: Removed `data: [DONE]` from Gemini SSE responses — real Gemini CLI no longer crashes with SyntaxError
 - **Security**: `bin/demoni-print-config` no longer leaks raw `DEEPSEEK_API_KEY`; prints `<set (redacted)>` only

@@ -140,4 +140,4 @@ Set `DEMONI_STREAM_IDLE_TIMEOUT_MS=1200000` for longer streams.
 
 ## License
 
-MIT
+Apache 2.0
