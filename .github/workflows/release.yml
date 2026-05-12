@@ -7,54 +7,17 @@ on:
       - completed
 
 jobs:
-  release:
+  ################################################################
+  # DISPATCHER — The actual release job now lives inside ci.yml
+  # as a job that runs after all 4 checks (static, test, package,
+  # docker) and only fires on version tags (v*).
+  #
+  # This trigger is kept as a convenience so the Release workflow
+  # still appears in the UI for visibility, but it no longer does
+  # any work itself. The real release logic runs inline in the CI
+  # workflow so it shows up as a visible step in the pipeline.
+  ################################################################
+  placeholder:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    # Only run when the CI workflow completed successfully *and*
-    # was triggered by a version tag push (v*).
-    # This prevents releases for branch pushes or failed CI runs.
-    if: |
-      github.event.workflow_run.conclusion == 'success'
-      && startsWith(github.event.workflow_run.head_branch, 'v')
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: refs/tags/${{ github.event.workflow_run.head_branch }}
-
-      - name: Extract tag
-        run: |
-          TAG="${{ github.event.workflow_run.head_branch }}"
-          ARCHIVE="demoni-${TAG}.zip"
-          git archive --format=zip --prefix="demoni-${TAG}/" --output="${ARCHIVE}" HEAD
-          echo "archive=${ARCHIVE}" >> "${GITHUB_ENV}"
-          echo "tag=${TAG}" >> "${GITHUB_ENV}"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.tag }}
-          name: "Demoni ${{ env.tag }}"
-          body: |
-            ## Demoni ${{ env.tag }}
-
-            ### Install
-
-            ```bash
-            curl -fsSL https://github.com/illdynamics/demoni/releases/download/${{ env.tag }}/demoni-${{ env.tag }}.zip -o demoni.zip
-            unzip demoni.zip
-            cd demoni-${{ env.tag }}
-            ./demoni install
-            ```
-
-            ### Quick Start
-
-            ```bash
-            export PATH="${HOME}/bin:${PATH}"
-            export DEEPSEEK_API_KEY="sk-..."
-            demoni --help
-            ```
-
-            See [RELEASE-NOTES.md](https://github.com/illdynamics/demoni/blob/main/RELEASE-NOTES.md) for full changelog.
-          files: ${{ env.archive }}
-          generate_release_notes: false
+      - run: echo "Release is handled inside .github/workflows/ci.yml — look for the 'Release' job there."
