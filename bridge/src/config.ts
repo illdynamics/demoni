@@ -48,6 +48,8 @@ export const config = {
   ),
   maxRetryDelayMs: parsePositiveInt(process.env.DEMONI_MAX_RETRY_DELAY_MS, 30_000),
   baseRetryDelayMs: parsePositiveInt(process.env.DEMONI_BASE_RETRY_DELAY_MS, 200),
+
+  systemPrompt: process.env.DEMONI_SYSTEM_PROMPT || '',
 };
 
 /**
@@ -59,6 +61,9 @@ export const REDACTABLE_SECRETS = new Set<string>([
   'UNSTRUCTURED_API_KEY',
   'DEMONI_BRIDGE_LOCAL_API_KEY',
   'GEMINI_API_KEY',
+  'DEMONI_LOCAL_PROXY_KEY',
+  'GOOGLE_API_KEY',
+  'GOOGLE_APPLICATION_CREDENTIALS',
 ]);
 
 /**
@@ -71,6 +76,11 @@ export function redactSecrets(input: string): string {
     if (val && val.length > 4) {
       out = out.split(val).join(`[REDACTED:${name}]`);
     }
+  }
+  // Also redact the actual bridge local API key value
+  const bridgeKey = process.env.DEMONI_BRIDGE_LOCAL_API_KEY;
+  if (bridgeKey && bridgeKey.length > 4) {
+    out = out.split(bridgeKey).join('[REDACTED:DEMONI_BRIDGE_LOCAL_API_KEY]');
   }
   out = out.replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]');
   out = out.replace(/(x-goog-api-key|x-api-key)[:\s=]+(\S+)/gi, '$1: [REDACTED]');

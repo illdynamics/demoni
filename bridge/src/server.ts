@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import axios, { type AxiosResponse } from 'axios';
+import axios, { type AxiosResponse, type AxiosRequestConfig } from 'axios';
 import fs from 'fs';
 import path from 'path';
 import { config, redactSecrets } from './config.js';
@@ -42,6 +42,43 @@ export function uuidV4(): string {
     }
   }
   return id;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Network Egress Blocklist — prevent Google/Gemini outbound contact
+// ═══════════════════════════════════════════════════════════════════════
+
+const GOOGLE_HOST_BLOCKLIST: ReadonlyArray<string> = [
+  'generativelanguage.googleapis.com',
+  'aiplatform.googleapis.com',
+  'oauth2.googleapis.com',
+  'accounts.google.com',
+  'play.googleapis.com',
+  'logging.googleapis.com',
+  'monitoring.googleapis.com',
+  'cloudtrace.googleapis.com',
+  'telemetry.googleapis.com',
+  'firebaseinstallations.googleapis.com',
+  'firebase-settings.crashlytics.com',
+  'crashlyticsreports-pa.googleapis.com',
+  'analytics.google.com',
+  'google-analytics.com',
+  'www.google-analytics.com',
+  'stats.g.doubleclick.net',
+  'doubleclick.net',
+  'gstatic.com',
+  'googleapis.com',
+  'googleusercontent.com',
+  'google.com',
+];
+
+function isBlockedHost(hostname: string): boolean {
+  const lower = hostname.toLowerCase();
+  return GOOGLE_HOST_BLOCKLIST.some((blocked) => {
+    if (lower === blocked) return true;
+    if (lower.endsWith('.' + blocked)) return true;
+    return false;
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -92,6 +129,29 @@ function closeLogStream(): void {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Axios monkey-patch for defense-in-depth egress blocking
+// ═══════════════════════════════════════════════════════════════════════
+
+const axiosProto = (axios as any).Axios?.prototype;
+const _originalRequest = axiosProto?.request;
+if (_originalRequest) {
+  axiosProto.request = function (config: AxiosRequestConfig) {
+    const url = (config as any).url || '';
+    let hostname = '';
+    try { hostname = new URL(url).hostname; } catch {
+      const base = (config as any).baseURL || '';
+      try { hostname = new URL(base).hostname; } catch {}
+    }
+    if (hostname && isBlockedHost(hostname)) {
+      const msg = `[PRIVACY] Blocked outbound axios request to blocked host: ${hostname}`;
+      log('warn', msg);
+      throw new Error(msg);
+    }
+    return _originalRequest.call(this, config);
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Model resolution
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -110,7 +170,7 @@ const DEFAULT_MODEL =
   MODEL_BY_ID.get('v4-flash-thinking')!;
 
 // Patterns that indicate a Google/Gemini model name that should be rejected
-const GOOGLE_MODEL_PATTERNS = [
+const GOOGLE_MODEL_PATTERNS: RegExp[] = [
   /^gemini/i,
   /^models\/gemini/i,
   /^palm/i,
@@ -118,10 +178,40 @@ const GOOGLE_MODEL_PATTERNS = [
   /^chat-bison/i,
   /^text-bison/i,
   /^code-bison/i,
+  /^google/i,
+  /^vertex/i,
+  /^models\/google/i,
+  /^models\/vertex/i,
 ];
 
 function isGoogleModel(model: string): boolean {
   return GOOGLE_MODEL_PATTERNS.some((p) => p.test(model));
+}
+
+// Block patterns for URL paths that target Google/Gemini-native endpoints
+const GOOGLE_URL_PATTERNS: RegExp[] = [
+  /\/v1beta\/models\/gemini/i,
+  /\/v1\/models\/gemini/i,
+  /\/v1beta\/models\/palm/i,
+  /\/v1\/models\/palm/i,
+  /\/v1beta\/models\/chat-bison/i,
+  /\/v1\/models\/chat-bison/i,
+  /\/v1beta\/models\/code-bison/i,
+  /\/v1\/models\/code-bison/i,
+  /\/v1beta\/models\/text-bison/i,
+  /\/v1\/models\/text-bison/i,
+  /\/v1beta\/models\/google/i,
+  /\/v1\/models\/google/i,
+  /\/v1beta\/models\/vertex/i,
+  /\/v1\/models\/vertex/i,
+  /\/v1\/tunedModels\//i,
+  /\/v1beta\/tunedModels\//i,
+  /\/v1\/cachedContents\//i,
+  /\/v1beta\/cachedContents\//i,
+];
+
+function isBlockedUrlPath(path: string): boolean {
+  return GOOGLE_URL_PATTERNS.some((p) => p.test(path));
 }
 
 function stripModelPrefix(value: string): string {
@@ -215,6 +305,24 @@ app.use((req: express.Request, _res: express.Response, next: express.NextFunctio
   next();
 });
 
+// ── Google/Gemini URL path block middleware ────────────────────────
+
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (isBlockedUrlPath(req.path)) {
+    const rid = getRequestId(req);
+    log('error', `[PRIVACY] Blocked Google/Gemini URL path: ${req.method} ${req.path}`, rid);
+    res.status(403).json({
+      error: {
+        code: 403,
+        message: 'Blocked Google/Gemini route by privacy policy. Demoni is configured for DeepSeek-only operation.',
+        status: 'PERMISSION_DENIED',
+      },
+    });
+    return;
+  }
+  next();
+});
+
 // ── Add x-request-id to responses ──────────────────────────────────
 
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -244,8 +352,47 @@ function requireBridgeAuth(
   res: express.Response,
   next: express.NextFunction,
 ): void {
+  // ── Feedback endpoints — DISABLED by privacy policy ──
+  if (/^\/v1(beta)?\/feedback/i.test(req.path)) {
+    res.status(403).json({
+      error: {
+        code: 403,
+        message: 'Feedback is disabled by privacy policy.',
+        status: 'PERMISSION_DENIED',
+      },
+    });
+    return;
+  }
+
   if (isPublicRequest(req)) {
     next();
+    return;
+  }
+
+  // ── Block Google OAuth and Application Credential auth ──
+  const authHeader = req.header('authorization') || '';
+
+  // Detect OAuth Bearer tokens (ya29. prefix is Google OAuth)
+  if (/^Bearer\s+ya29\./i.test(authHeader)) {
+    res.status(403).json({
+      error: {
+        code: 403,
+        message: 'Blocked Google OAuth authentication by privacy policy. Demoni uses local bridge API keys only.',
+        status: 'PERMISSION_DENIED',
+      },
+    });
+    return;
+  }
+
+  // Detect Google Application Default Credential patterns
+  if (/^Bearer\s+.*\.apps\.googleusercontent\.com/i.test(authHeader)) {
+    res.status(403).json({
+      error: {
+        code: 403,
+        message: 'Blocked Google Application Credentials by privacy policy. Demoni uses local bridge API keys only.',
+        status: 'PERMISSION_DENIED',
+      },
+    });
     return;
   }
 
@@ -348,6 +495,20 @@ app.get('/debug/routes', (_req, res) => {
     .filter(Boolean);
 
   res.json({ routes: routes || [] });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Feedback endpoints — DISABLED by privacy policy (belt-and-suspenders)
+// ═══════════════════════════════════════════════════════════════════════
+
+app.all(['/v1/feedback', '/v1beta/feedback', '/v1/feedback/*', '/v1beta/feedback/*'], (_req, res) => {
+  res.status(403).json({
+    error: {
+      code: 403,
+      message: 'Feedback is disabled by privacy policy.',
+      status: 'PERMISSION_DENIED',
+    },
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -499,6 +660,17 @@ async function postToDeepSeek(
         `DeepSeek request attempt ${attempt}/${attempts} model=${dsReq.model} stream=${options.stream}`,
         requestId,
       );
+
+      // ── Privacy egress guard ──
+      const outboundUrl = `${config.deepseekApiBase}/chat/completions`;
+      let outboundHost = '';
+      try { outboundHost = new URL(outboundUrl).hostname; } catch {}
+      if (outboundHost && isBlockedHost(outboundHost)) {
+        const msg = `[PRIVACY] Blocked outbound request to blocked host: ${outboundHost}`;
+        log('error', msg, requestId);
+        throw new Error(msg);
+      }
+
       return await axios.post(
         `${config.deepseekApiBase}/chat/completions`,
         dsReq,
@@ -636,7 +808,7 @@ async function handleGenerateContent(
     log('debug', `Resolved model: ${resolvedModel.id} → ${resolvedModel.providerModel}`, requestId);
 
     const dsReq = enrichDeepSeekRequest(
-      translateGeminiToDeepSeek(req.body, resolvedModel.providerModel),
+      translateGeminiToDeepSeek(req.body, resolvedModel.providerModel, config.systemPrompt),
       resolvedModel,
     );
 
@@ -680,7 +852,7 @@ async function handleStreamGenerateContent(
 
     const resolvedModel = resolveModel(extractModelFromPath(req));
     const dsReq = enrichDeepSeekRequest(
-      translateGeminiToDeepSeek(req.body, resolvedModel.providerModel),
+      translateGeminiToDeepSeek(req.body, resolvedModel.providerModel, config.systemPrompt),
       resolvedModel,
     );
     dsReq.stream = true;

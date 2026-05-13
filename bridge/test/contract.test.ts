@@ -472,9 +472,12 @@ describe('Bridge API Contract', () => {
       expect(body.name).toBe('models/v4-pro-thinking');
     });
 
-    it('GET /v1beta/models/gemini-pro returns 404', async () => {
+    it('GET /v1beta/models/gemini-pro returns 403 (privacy blocked)', async () => {
       const res = await bridgeFetch('/v1beta/models/gemini-pro');
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBeDefined();
+      expect(body.error.message).toContain('privacy policy');
     });
 
     it('Model list works without auth', async () => {
@@ -538,14 +541,17 @@ describe('Bridge API Contract', () => {
       expect(body.candidates[0].content.parts[0].text).toContain('"result"');
     });
 
-    it('POST with unsupported model returns error', async () => {
+    it('POST with unsupported model returns 403 (privacy blocked)', async () => {
       const res = await bridgeFetch('/v1beta/models/gemini-ultra:generateContent', {
         method: 'POST',
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: 'Test' }] }],
         }),
       });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBeDefined();
+      expect(body.error.message).toContain('privacy policy');
     });
 
     it('POST via /v1/models path also works', async () => {

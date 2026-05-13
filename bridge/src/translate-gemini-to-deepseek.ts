@@ -66,6 +66,7 @@ function mapToolConfig(
 export function translateGeminiToDeepSeek(
   geminiReq: GeminiGenerateContentRequest,
   model: string,
+  systemPrompt?: string,
 ): DeepSeekRequest {
   // ── Guard: unsupported media ──────────────────────────────────────
   if (geminiReq.cachedContent) {
@@ -86,14 +87,22 @@ export function translateGeminiToDeepSeek(
   const messages: DeepSeekMessage[] = [];
 
   // 1. System instruction → first system message
+  // Demoni system prompt takes priority, then Gemini system instruction
+  let systemParts: string[] = [];
+  if (systemPrompt) {
+    systemParts.push(systemPrompt);
+  }
   if (geminiReq.systemInstruction) {
-    const systemText = geminiReq.systemInstruction.parts
+    const geminiSystemText = geminiReq.systemInstruction.parts
       .map((p) => p.text)
       .filter(Boolean)
       .join('\n');
-    if (systemText) {
-      messages.push({ role: 'system', content: systemText });
+    if (geminiSystemText) {
+      systemParts.push(geminiSystemText);
     }
+  }
+  if (systemParts.length > 0) {
+    messages.push({ role: 'system', content: systemParts.join('\n\n') });
   }
 
   // 2. Contents → messages
