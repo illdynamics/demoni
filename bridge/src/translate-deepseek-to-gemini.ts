@@ -35,10 +35,12 @@ export function translateDeepSeekToGemini(
     candidates: dsRes.choices.map((choice) => {
       const parts: GeminiPart[] = [];
 
-      // Reasoning content (thinking traces) — store as text with special marker
+      // Reasoning content (thinking traces) — emit as a thought part
+      // The upstream Gemini CLI renders thought parts in a special style
       if (choice.message.reasoning_content) {
         parts.push({
-          text: `[thinking]${choice.message.reasoning_content}[/thinking]`,
+          text: choice.message.reasoning_content,
+          thought: true,
         });
       }
 
@@ -213,9 +215,9 @@ export function translateDeepSeekStreamToGemini(
 
   const parts: GeminiPart[] = [];
 
-  // Thinking / reasoning content
+  // Thinking / reasoning content — emit as a thought part
   if (delta.reasoning_content) {
-    parts.push({ text: `[thinking]${delta.reasoning_content}[/thinking]` });
+    parts.push({ text: delta.reasoning_content, thought: true });
   }
 
   // Regular text delta — emit immediately

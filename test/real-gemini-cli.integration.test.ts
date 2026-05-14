@@ -7,7 +7,7 @@
  * Skip if DEMONI_RUN_REAL_GEMINI_TESTS is not set to '1'.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';

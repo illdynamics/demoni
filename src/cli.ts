@@ -34,7 +34,9 @@ import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import crypto from 'node:crypto';
 
+import dotenv from 'dotenv';
 import { loadConfig, updateConfig, type DemoniConfig, type BridgeMode, type TranslatorMode } from './config.js';
+import { filterStderrLine } from './stderr-filter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -839,12 +841,36 @@ function spawnGeminiCli(
     log('Spawning Gemini CLI:', geminiPath, args.join(' '));
     log('GOOGLE_GEMINI_BASE_URL=', bridgeUrl);
 
+    // Pipe stderr to filter known Gemini CLI startup warnings
     const child = spawn(geminiPath, args, {
       env,
-      stdio: 'inherit',
+      stdio: [process.stdin, process.stdout, 'pipe'],
       cwd: process.cwd(),
       shell: platform() === 'win32',
     });
+
+    // Filter stderr — suppress known noisy startup warnings
+    if (child.stderr) {
+      let stderrBuffer = '';
+      child.stderr.setEncoding('utf8');
+      child.stderr.on('data', (data) => {
+        stderrBuffer += data;
+        const lines = stderrBuffer.split('\n');
+        stderrBuffer = lines.pop() || '';
+        for (const line of lines) {
+          const filtered = filterStderrLine(line);
+          if (filtered) {
+            process.stderr.write(filtered + '\n');
+          }
+        }
+      });
+      child.stderr.on('end', () => {
+        if (stderrBuffer) {
+          const filtered = filterStderrLine(stderrBuffer);
+          if (filtered) process.stderr.write(filtered + '\n');
+        }
+      });
+    }
 
     child.on('error', (err) => reject(new Error(`Failed to spawn Gemini CLI: ${err.message}`)));
     child.on('exit', (code, signal) => {
@@ -1092,6 +1118,8 @@ function setupCleanup(): void {
 // ── Main ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Load .env before reading any config
+  dotenv.config();
   const args = process.argv.slice(2);
 
   // Load config (reads from file + env)
@@ -1186,6 +1214,23 @@ async function main(): Promise<void> {
 
   // Start the bridge
   const bridgeUrl = await startBridge(cfg);
+
+  // ── No-input UX check ──────────────────────────────────────────
+  // When invoked with zero arguments and TTY stdin (no pipe), show
+  // a friendly Demoni-branded hint before entering interactive mode.
+  if (args.length === 0 && process.stdin.isTTY) {
+    process.stderr.write(
+      '┌' + '─'.repeat(61) + '┐\n' +
+      '│  Demoni v0.2.1 — AI coding agent (DeepSeek V4)           │\n' +
+      '│  Type your question or use:                              │\n' +
+      '│    demoni "your question here"                           │\n' +
+      '│    demoni --prompt "your question here"                  │\n' +
+      '│    demoni -m v4-flash "quick question"                   │\n' +
+      '│    demoni --help                                         │\n' +
+      '│  Piping: echo "question" | demoni -y                     │\n' +
+      '└' + '─'.repeat(61) + '┘\n\n',
+    );
+  }
 
   // Spawn Gemini CLI
   const geminiPath = findGeminiCli();

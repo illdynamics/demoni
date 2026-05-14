@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { homedir } from 'os';
 import { translateGeminiToDeepSeek } from '../src/translate-gemini-to-deepseek.js';
 import { translateDeepSeekToGemini, translateDeepSeekStreamToGemini, mapFinishReason, ToolCallStreamAccumulator } from '../src/translate-deepseek-to-gemini.js';
 import { resolveModel, uuidV4, estimateTokens } from '../src/server.js';
@@ -341,7 +340,7 @@ describe('translateDeepSeekToGemini', () => {
     expect(result.candidates[0].finishReason).toBe('STOP');
   });
 
-  it('handles reasoning content', () => {
+  it('handles reasoning content as thought parts', () => {
     const dsRes: DeepSeekResponse = {
       id: 'resp-3',
       object: 'chat.completion',
@@ -361,8 +360,13 @@ describe('translateDeepSeekToGemini', () => {
     };
     const result = translateDeepSeekToGemini(dsRes);
     expect(result.candidates[0].content.parts).toHaveLength(2);
-    expect(result.candidates[0].content.parts[0].text).toContain('[thinking]');
-    expect(result.candidates[0].content.parts[0].text).toContain('Let me think...');
+    // Reasoning content should be a thought part (not wrapped in [thinking] tags)
+    expect(result.candidates[0].content.parts[0].thought).toBe(true);
+    expect(result.candidates[0].content.parts[0].text).toBe('Let me think...');
+    expect(result.candidates[0].content.parts[0].text).not.toContain('[thinking]');
+    expect(result.candidates[0].content.parts[0].text).not.toContain('[/thinking]');
+    // Regular content should NOT have thought flag
+    expect(result.candidates[0].content.parts[1].thought).toBeUndefined();
     expect(result.candidates[0].content.parts[1].text).toBe('Final answer');
   });
 
@@ -426,6 +430,64 @@ describe('translateDeepSeekStreamToGemini', () => {
     };
     const result = translateDeepSeekStreamToGemini(chunk);
     expect(result).toBeNull();
+  });
+
+  it('converts reasoning content as thought part in streaming', () => {
+    const chunk: DeepSeekStreamChunk = {
+      id: 'chunk-4',
+      object: 'chat.completion.chunk',
+      created: 1234567890,
+      model: 'deepseek-v4-flash',
+      choices: [
+        {
+          index: 0,
+          delta: {
+            reasoning_content: 'Let me reason step by step...',
+          },
+          finish_reason: null,
+        },
+      ],
+    };
+    const result = translateDeepSeekStreamToGemini(chunk);
+    expect(result).not.toBeNull();
+    expect(result!.candidates[0].content.parts).toHaveLength(1);
+    // Should be a thought part, not raw text with [thinking] wrapping
+    expect(result!.candidates[0].content.parts[0].thought).toBe(true);
+    expect(result!.candidates[0].content.parts[0].text).toBe('Let me reason step by step...');
+    expect(result!.candidates[0].content.parts[0].text).not.toContain('[thinking]');
+    expect(result!.candidates[0].content.parts[0].text).not.toContain('[/thinking]');
+  });
+
+  it('handles mixed reasoning and text in streaming', () => {
+    const chunk: DeepSeekStreamChunk = {
+      id: 'chunk-5',
+      object: 'chat.completion.chunk',
+      created: 1234567890,
+      model: 'deepseek-v4-flash',
+      choices: [
+        {
+          index: 0,
+          delta: {
+            reasoning_content: 'Thinking...',
+            content: 'Hello there',
+          },
+          finish_reason: null,
+        },
+      ],
+    };
+    const result = translateDeepSeekStreamToGemini(chunk);
+    expect(result).not.toBeNull();
+    expect(result!.candidates[0].content.parts).toHaveLength(2);
+    // First part: thought=true
+    expect(result!.candidates[0].content.parts[0].thought).toBe(true);
+    expect(result!.candidates[0].content.parts[0].text).toBe('Thinking...');
+    // Second part: no thought flag, regular text
+    expect(result!.candidates[0].content.parts[1].thought).toBeUndefined();
+    expect(result!.candidates[0].content.parts[1].text).toBe('Hello there');
+    // No raw [thinking] tags anywhere
+    const allText = result!.candidates[0].content.parts.map((p: any) => p.text || '').join('');
+    expect(allText).not.toContain('[thinking]');
+    expect(allText).not.toContain('[/thinking]');
   });
 
   it('converts tool call deltas via accumulator', () => {
@@ -611,7 +673,7 @@ describe('redactSecrets', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('PID file', () => {
-  const testPidFile = `${homedir()}/.demoni/run/bridge.pid`;
+  // const testPidFile = `${homedir()}/.demoni/run/bridge.pid`;
 
   // The PID file is written during server startup.
   // Since we can't start a full server in unit tests easily,

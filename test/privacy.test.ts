@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync,  mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir, homedir } from 'node:os';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const CLI_PATH = resolve(process.cwd(), 'dist/cli.js');

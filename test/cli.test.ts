@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { describe, it, expect } from 'vitest';
+import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const CLI_PATH = resolve(process.cwd(), 'dist/cli.js');
@@ -95,7 +95,7 @@ describe('demoni CLI', () => {
   });
 
   it('fails without DEEPSEEK_API_KEY', async () => {
-    const { stderr, exitCode } = await runCli(
+    const { exitCode } = await runCli(
       ['--help'],
       { DEEPSEEK_API_KEY: '' },
     );
@@ -105,7 +105,7 @@ describe('demoni CLI', () => {
 
   it('passes through unknown flags', async () => {
     // Just validate that unknown flags don't cause model rejection
-    const { stdout, exitCode } = await runCli(
+    const { exitCode } = await runCli(
       ['--some-unknown-flag', '--help'],
       { DEEPSEEK_API_KEY: 'sk-test' },
     );
