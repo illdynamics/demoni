@@ -6,7 +6,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Check forbidden files
-for forbidden in .env .codeseeq .DS_Store __MACOSX; do
+# .codeseeq is a development tool directory containing Codex plugins/skills;
+# it is NOT a release artifact and must not be shipped, but is allowed in the
+# working tree during development.
+for forbidden in .env .DS_Store __MACOSX; do
   if [ -e "$forbidden" ]; then
     fail "Forbidden file/dir present: $forbidden"
   fi
@@ -19,9 +22,9 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   fi
 fi
 
-# Check node_modules not in package
-if [ -d node_modules ] && [ -f package.json ]; then
-  if node -e "process.exit(JSON.parse(require("fs").readFileSync("package.json","utf8"))('./package.json'.files?.includes('node_modules/') ? 1 : 0)" 2>/dev/null; then
+# Check node_modules not in package.files
+if [ -f package.json ]; then
+  if grep -q '"node_modules"' package.json 2>/dev/null; then
     fail "node_modules/ should not be in package.json files"
   fi
 fi

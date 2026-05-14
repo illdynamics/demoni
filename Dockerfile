@@ -29,7 +29,7 @@ WORKDIR /opt/demoni
 RUN mkdir -p bin bridge config /workspace /home/demoni/.demoni
 
 # Install official Gemini CLI (global npm)
-ARG GEMINI_CLI_NPM_VERSION=latest
+ARG GEMINI_CLI_NPM_VERSION=0.41.2
 RUN npm install -g @google/gemini-cli@${GEMINI_CLI_NPM_VERSION}
 
 # Copy Demoni CLI

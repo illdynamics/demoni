@@ -17,7 +17,7 @@
  *   custom  – Demoni TypeScript Gemini→DeepSeek bridge
  */
 
-import { spawn, execSync, type ChildProcess } from 'node:child_process';
+import { spawn, execSync, spawnSync, type ChildProcess } from 'node:child_process';
 import {
   readFileSync,
   writeFileSync,
@@ -383,8 +383,8 @@ async function waitForReady(url: string, timeoutMs = 30_000): Promise<void> {
       const res = await fetch(`${url}/readyz`, { signal: AbortSignal.timeout(2000) });
       if (res.ok) { log('Bridge is ready at', url); return; }
       lastErr = `HTTP ${res.status}`;
-    } catch (err: any) {
-      lastErr = err.message || String(err);
+    } catch (err: unknown) {
+      lastErr = String(err) || String(err);
     }
     await sleep(200);
   }
@@ -567,8 +567,9 @@ async function verifyExternalBridge(url: string): Promise<string> {
       if (!res.ok) {
         die('External bridge unreachable at', url, `(HTTP ${res.status})`);
       }
-    } catch (err: any) {
-      die('External bridge unreachable at', url + ':', err.message || 'connection refused');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      die('External bridge unreachable at', url + ':', msg || 'connection refused');
     }
   }
   log('External bridge verified at', url);
@@ -1084,15 +1085,35 @@ function setupCleanup(): void {
   });
 
   process.on('SIGINT', () => {
-    log('Received SIGINT');
-    cleanup();
-    process.exit(130);
+    // Do not call log() here — logFile() may lazily create streams
+    // inside a signal handler, which is unsafe.  Instead, we use
+    // console.error which is signal-safe.
+    console.error('[demoni] Received SIGINT');
+    
+    // Fire-and-forget async cleanup; exit after timeout backstop.
+    const doExit = () => {
+      if (bridgeProcess && !bridgeProcess.killed) {
+        try { bridgeProcess.kill('SIGKILL'); } catch {}
+      }
+      removePidFile();
+      process.exit(130);
+    };
+    doCleanup().finally(doExit);
+    // If cleanup doesn't finish within 5 seconds, force exit.
+    setTimeout(doExit, 5000).unref();
   });
 
   process.on('SIGTERM', () => {
-    log('Received SIGTERM');
-    cleanup();
-    process.exit(143);
+    console.error('[demoni] Received SIGTERM');
+    const doExit = () => {
+      if (bridgeProcess && !bridgeProcess.killed) {
+        try { bridgeProcess.kill('SIGKILL'); } catch {}
+      }
+      removePidFile();
+      process.exit(143);
+    };
+    doCleanup().finally(doExit);
+    setTimeout(doExit, 5000).unref();
   });
 
   process.on('SIGHUP', () => {
@@ -1185,6 +1206,10 @@ async function main(): Promise<void> {
 
   // Set up dirs and cleanup
   ensureDemoniDirs();
+
+  // Initialize log stream early so signal handlers never lazily create
+  // it (lazy creation inside signal handlers risks deadlocks).
+  logFile('demoni startup');
   setupCleanup();
   writeGeminiSettings(cfg);
 
@@ -1212,8 +1237,15 @@ async function main(): Promise<void> {
     }
   }
 
-  // Start the bridge
+  // Start the bridge (with overall startup timeout)
+  const STARTUP_TIMEOUT_MS = 60_000;
+  const startupTimer = setTimeout(() => {
+    die('Startup timed out after ' + STARTUP_TIMEOUT_MS/1000 + 's. Check bridge health and DEEPSEEK_API_KEY.');
+  }, STARTUP_TIMEOUT_MS);
+  startupTimer.unref();
+
   const bridgeUrl = await startBridge(cfg);
+  clearTimeout(startupTimer);
 
   // ── No-input UX check ──────────────────────────────────────────
   // When invoked with zero arguments and TTY stdin (no pipe), show

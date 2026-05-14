@@ -1097,6 +1097,9 @@ let server: ReturnType<typeof app.listen> | null = null;
 
 let shuttingDown = false;
 
+// Track active connections for graceful shutdown draining.
+const activeSockets = new Set<import('node:net').Socket>();
+
 function gracefulShutdown(signal: string): void {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -1106,14 +1109,29 @@ function gracefulShutdown(signal: string): void {
   // Force exit after timeout in case connections don't drain
   const forceExit = setTimeout(() => {
     log('warn', `Graceful shutdown timed out after ${config.gracefulShutdownTimeoutMs}ms, forcing exit`);
+    // Destroy any remaining open sockets
+    for (const sock of activeSockets) {
+      try { sock.destroy(); } catch {}
+    }
     removePidFile();
     closeLogStream();
     process.exit(1);
   }, config.gracefulShutdownTimeoutMs);
   forceExit.unref();
 
+  // After a short drain window, destroy lingering connections
+  const drainTimeout = setTimeout(() => {
+    log('info', 'Drain window expired, closing remaining connections');
+    for (const sock of activeSockets) {
+      try { sock.destroy(); } catch {}
+    }
+  }, Math.min(config.gracefulShutdownTimeoutMs / 3, 3000));
+  drainTimeout.unref();
+
   if (server) {
+    // Stop accepting new connections
     server.close(() => {
+      clearTimeout(drainTimeout);
       clearTimeout(forceExit);
       log('info', 'All connections drained, exiting');
       removePidFile();
@@ -1121,6 +1139,7 @@ function gracefulShutdown(signal: string): void {
       process.exit(0);
     });
   } else {
+    clearTimeout(drainTimeout);
     clearTimeout(forceExit);
     removePidFile();
     closeLogStream();
@@ -1158,6 +1177,14 @@ function startBridge(): ReturnType<typeof app.listen> {
     log('info', `Unstructured: ${config.unstructuredApiKey ? 'key present but tool disabled' : 'disabled'}`);
     log('info', `Log file: ${config.logFile}`);
     log('info', `PID file: ${config.pidFile}`);
+  });
+
+  // Track connections for graceful shutdown draining
+  server.on('connection', (socket) => {
+    activeSockets.add(socket);
+    socket.on('close', () => {
+      activeSockets.delete(socket);
+    });
   });
   return server;
 }

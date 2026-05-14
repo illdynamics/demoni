@@ -7,8 +7,20 @@ describe('stderr-filter', () => {
   });
 
   describe('drops known warning lines', () => {
-    it('drops true-color warning', () => {
+    it('drops true-color warning (original format)', () => {
       expect(filterStderrLine('Warning: True color (24-bit) support not detected. Using a terminal with true color enabled will result in a better visual experience.')).toBe('');
+    });
+
+    it('drops true-color warning (short format)', () => {
+      expect(filterStderrLine('Warning: True color (24-bit) support not detected.')).toBe('');
+    });
+
+    it('drops basic terminal warning', () => {
+      expect(filterStderrLine('Warning: Basic terminal detected (TERM=dumb). Visual rendering will be limited. For the best experience, use a terminal emulator with truecolor support.')).toBe('');
+    });
+
+    it('drops 256-color warning', () => {
+      expect(filterStderrLine('Warning: 256-color support not detected. Using a terminal with at least 256-color support is recommended for a better visual experience.')).toBe('');
     });
 
     it('drops ripgrep fallback warning', () => {
@@ -50,6 +62,22 @@ describe('stderr-filter', () => {
       const result = filterStderrLine(input);
       expect(result).toContain('demoni');
       expect(result).not.toContain('gemini');
+    });
+  });
+
+  describe('thinking/reasoning leak prevention', () => {
+    it('does not filter visible assistant content', () => {
+      expect(filterStderrLine('Hello, I am an AI assistant.')).toBe('Hello, I am an AI assistant.');
+    });
+
+    it('does not filter reasoning content from the bridge', () => {
+      // Normal reasoning content output (not from Gemini CLI startup messages)
+      expect(filterStderrLine('Let me think about this...')).toBe('Let me think about this...');
+    });
+
+    it('passes through normal output with thinking keyword in user context', () => {
+      // This simulates actual assistant content that should not be filtered
+      expect(filterStderrLine('I am thinking about the best approach.')).toBe('I am thinking about the best approach.');
     });
   });
 

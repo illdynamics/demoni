@@ -7,6 +7,28 @@
  *
  * This filter is applied at the process boundary (child stderr → parent stderr)
  * so it never touches third-party code.
+ *
+ * ── Maintenance Policy ──────────────────────────────────────────
+ * This is a PATCH-LAYER filter.  Upstream Gemini CLI may change
+ * warning message formats between releases.  Maintainers must:
+ *
+ *   1. On each @google/gemini-cli upgrade, run the smoke test:
+ *        DEEPSEEK_API_KEY=sk-test-key TERM=dumb CI=true \
+ *          demoni -y 2>&1 | grep -i 'warning\|startup\|ripgrep'
+ *
+ *   2. If new warnings appear, add them as regexes in DROP_PATTERNS
+ *      or exact strings in DROP_EXACT below.
+ *
+ *   3. Add corresponding tests in test/stderr-filter.test.ts.
+ *
+ *   4. If upstream merges a CLI flag/env var to suppress these
+ *      messages natively, use that instead and deprecate the
+ *      corresponding filter patterns.
+ *
+ *   This module is the ONLY place where upstream noise suppression
+ *   should happen.  Do not spread such logic into cli.ts or other
+ *   modules.
+ * ─────────────────────────────────────────────────────────────────
  */
 
 /** Set of exact-line-hash patterns to drop entirely. */
@@ -19,6 +41,8 @@ const DROP_EXACT: Set<string> = new Set([
 /** Regex patterns to drop fully. */
 const DROP_PATTERNS: RegExp[] = [
   /^Warning: True color \(24-bit\) support not detected/i,
+  /^Warning: Basic terminal detected/i,
+  /^Warning: 256.color support not detected/i,
   /^Ripgrep is not available\.\s*Falling back to GrepTool/i,
   /^\[STARTUP\] Phase '.*' was started but never ended\. Skipping metrics\.\s*$/,
   /^\[STARTUP\] Cannot measure phase '.*': start mark '.*' not found \(likely cleared by reset\)\.\s*$/,
