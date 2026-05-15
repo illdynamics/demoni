@@ -17,7 +17,7 @@
  *   custom  – Demoni TypeScript Gemini→DeepSeek bridge
  */
 
-import { spawn, execSync, type ChildProcess } from 'node:child_process';
+import { spawn, execSync, spawnSync, type ChildProcess } from 'node:child_process';
 import {
   readFileSync,
   writeFileSync,
@@ -34,7 +34,9 @@ import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import crypto from 'node:crypto';
 
-import { loadConfig, type DemoniConfig, type BridgeMode, type TranslatorMode } from './config.js';
+import dotenv from 'dotenv';
+import { loadConfig, updateConfig, type DemoniConfig, type BridgeMode, type TranslatorMode } from './config.js';
+import { filterStderrLine } from './stderr-filter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -44,6 +46,40 @@ const __dirname = dirname(__filename);
 const DEBUG = process.env.DEMONI_DEBUG === '1' || process.argv.includes('--debug');
 let logStream: WriteStream | null = null;
 
+// ── Logging redaction ──────────────────────────────────────────────
+const REDACT_PATTERNS: Array<[RegExp, string]> = [
+  [/sk-[a-zA-Z0-9_-]{20,}/g, '[REDACTED:API_KEY]'],
+  [/(?:DEEPSEEK_API_KEY|GEMINI_API_KEY|BRAVE_API_KEY|UNSTRUCTURED_API_KEY|DEMONI_BRIDGE_LOCAL_API_KEY)=([^\s,;]+)/gi, '$1=[REDACTED]'],
+  [/Bearer\s+\S+/gi, 'Bearer [REDACTED]'],
+];
+
+function redactLog(input: string): string {
+  let out = input;
+  // Redact API key values
+  for (const [regex, replacement] of REDACT_PATTERNS) {
+    out = out.replace(regex, replacement);
+  }
+  // Redact the DEEPSEEK_API_KEY env var value specifically
+  const dsk = process.env.DEEPSEEK_API_KEY;
+  if (dsk && dsk.length > 4) {
+    out = out.split(dsk).join('[REDACTED:DEEPSEEK_API_KEY]');
+  }
+  const bak = process.env.BRAVE_API_KEY;
+  if (bak && bak.length > 4) {
+    out = out.split(bak).join('[REDACTED:BRAVE_API_KEY]');
+  }
+  const uak = process.env.UNSTRUCTURED_API_KEY;
+  if (uak && uak.length > 4) {
+    out = out.split(uak).join('[REDACTED:UNSTRUCTURED_API_KEY]');
+  }
+  const blk = BRIDGE_LOCAL_API_KEY;
+  if (blk && blk.length > 4) {
+    out = out.split(blk).join('[REDACTED:BRIDGE_LOCAL_API_KEY]');
+  }
+  return out;
+}
+
+
 function logFile(msg: string): void {
   try {
     if (!logStream) {
@@ -52,7 +88,7 @@ function logFile(msg: string): void {
       logStream = createWriteStream(join(logDir, 'demoni.log'), { flags: 'a', mode: 0o600 });
     }
     const ts = new Date().toISOString();
-    logStream.write(`[${ts}] ${msg}\n`);
+    logStream.write(`[${ts}] ${redactLog(msg)}\n`);
   } catch {
     // silently ignore log failures
   }
@@ -60,20 +96,23 @@ function logFile(msg: string): void {
 
 function log(...args: unknown[]): void {
   const msg = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
-  if (DEBUG) console.error('[demoni]', msg);
-  logFile('[debug] ' + msg);
+  const redacted = redactLog(msg);
+  if (DEBUG) console.error('[demoni]', redacted);
+  logFile('[debug] ' + redacted);
 }
 
 function warn(...args: unknown[]): void {
   const msg = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
-  console.error('[demoni:warn]', msg);
-  logFile('[warn] ' + msg);
+  const redacted = redactLog(msg);
+  console.error('[demoni:warn]', redacted);
+  logFile('[warn] ' + redacted);
 }
 
 function die(...args: unknown[]): never {
   const msg = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
-  console.error('[demoni:error]', msg);
-  logFile('[error] ' + msg);
+  const redacted = redactLog(msg);
+  console.error('[demoni:error]', redacted);
+  logFile('[error] ' + redacted);
   process.exit(1);
 }
 
@@ -207,7 +246,10 @@ function removePidFile(): void {
 // ── Gemini CLI settings ─────────────────────────────────────────────
 
 function writeGeminiSettings(cfg: DemoniConfig): void {
-  const settingsPath = join(GEMINI_CLI_HOME, 'settings.json');
+  const settingsDir = join(GEMINI_CLI_HOME, '.gemini');
+  mkdirSync(settingsDir, { recursive: true, mode: 0o700 });
+
+  const settingsPath = join(settingsDir, 'settings.json');
   const settings = {
     model: { name: cfg.defaultModel },
     security: {
@@ -218,38 +260,98 @@ function writeGeminiSettings(cfg: DemoniConfig): void {
     },
     general: { defaultApprovalMode: 'default' },
     privacy: { usageStatisticsEnabled: false },
+    telemetry: {
+      enabled: false,
+      logPrompts: false,
+      target: 'local',
+      otlpEndpoint: '',
+    },
   };
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { mode: 0o600 });
   log('Gemini settings written to', settingsPath);
 }
 
 function buildGeminiEnv(bridgeUrl: string, cfg: DemoniConfig): Record<string, string> {
-  return {
-    HOME: process.env.HOME || homedir(),
-    PATH: process.env.PATH || '',
-    GEMINI_CLI_HOME,
-    GEMINI_API_KEY: BRIDGE_LOCAL_API_KEY,
-    GOOGLE_GEMINI_BASE_URL: bridgeUrl,
-    GOOGLE_GENAI_API_VERSION: 'v1beta',
-    // Unset Google auth env vars to prevent OAuth/Vertex paths
-    GOOGLE_APPLICATION_CREDENTIALS: '',
-    GOOGLE_CLOUD_PROJECT: '',
-    GOOGLE_CLOUD_LOCATION: '',
-    GOOGLE_GENAI_USE_VERTEXAI: 'false',
-    GEMINI_CLI_TRUST_WORKSPACE: 'true',
-    // Pass through Demoni env to bridge env
-    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || '',
-    DEEPSEEK_BASE_URL: cfg.deepseekBaseUrl,
-    DEMONI_BRIDGE_LOCAL_API_KEY: BRIDGE_LOCAL_API_KEY,
-    DEMONI_BRIDGE_PORT: String(bridgePort),
-    DEMONI_BRIDGE_HOST: '127.0.0.1',
-    DEMONI_BRIDGE_AUTO_START: '1',
-    DEMONI_MODEL: process.env.DEMONI_MODEL || cfg.defaultModel,
-    DEMONI_THINKING: process.env.DEMONI_THINKING || '',
-    DEMONI_REASONING_EFFORT: process.env.DEMONI_REASONING_EFFORT || 'high',
-    BRAVE_API_KEY: process.env.BRAVE_API_KEY || '',
-    UNSTRUCTURED_API_KEY: process.env.UNSTRUCTURED_API_KEY || '',
-  };
+  const safeEnv: Record<string, string> = {};
+
+  // Minimal runtime
+  safeEnv.HOME = process.env.HOME || homedir();
+  safeEnv.PATH = process.env.PATH || '/usr/local/bin:/usr/bin:/bin';
+  safeEnv.LANG = process.env.LANG || 'en_US.UTF-8';
+  safeEnv.TERM = process.env.TERM || 'xterm-256color';
+  safeEnv.SHELL = process.env.SHELL || '/bin/bash';
+  safeEnv.USER = process.env.USER || '';
+  safeEnv.TMPDIR = process.env.TMPDIR || '/tmp';
+
+  // Demoni bridge routing
+  safeEnv.GEMINI_CLI_HOME = GEMINI_CLI_HOME;
+  safeEnv.GEMINI_API_KEY = BRIDGE_LOCAL_API_KEY;
+  safeEnv.GOOGLE_GEMINI_BASE_URL = bridgeUrl;
+  safeEnv.GOOGLE_GENAI_API_VERSION = 'v1beta';
+
+  // Force-disable all Google/Gemini/Vertex auth paths
+  safeEnv.GOOGLE_APPLICATION_CREDENTIALS = '';
+  safeEnv.GOOGLE_CLOUD_PROJECT = '';
+  safeEnv.GOOGLE_CLOUD_LOCATION = '';
+  safeEnv.GOOGLE_GENAI_USE_VERTEXAI = 'false';
+
+  // Gemini CLI trust workspace
+  safeEnv.GEMINI_CLI_TRUST_WORKSPACE = 'true';
+
+  // Telemetry: FORCE DISABLE ALL
+  safeEnv.GEMINI_TELEMETRY_ENABLED = 'false';
+  safeEnv.GEMINI_TELEMETRY_LOG_PROMPTS = 'false';
+  safeEnv.GEMINI_TELEMETRY_USE_COLLECTOR = 'false';
+  safeEnv.GEMINI_TELEMETRY_USE_CLI_AUTH = 'false';
+  safeEnv.GEMINI_TELEMETRY_OTLP_ENDPOINT = '';
+  safeEnv.GEMINI_TELEMETRY_TARGET = 'local';
+
+  // OpenTelemetry: FORCE DISABLE ALL
+  safeEnv.OTEL_SDK_DISABLED = 'true';
+  safeEnv.OTEL_TRACES_EXPORTER = 'none';
+  safeEnv.OTEL_METRICS_EXPORTER = 'none';
+  safeEnv.OTEL_LOGS_EXPORTER = 'none';
+  safeEnv.OTEL_EXPORTER_OTLP_ENDPOINT = '';
+  safeEnv.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = '';
+  safeEnv.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT = '';
+  safeEnv.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = '';
+  safeEnv.OTEL_SERVICE_NAME = '';
+  safeEnv.OTEL_RESOURCE_ATTRIBUTES = '';
+
+  // No auto-update
+  safeEnv.NO_UPDATE_NOTIFIER = '1';
+  safeEnv.NPM_CONFIG_UPDATE_NOTIFIER = 'false';
+  safeEnv.NPM_CONFIG_AUDIT = 'false';
+  safeEnv.NPM_CONFIG_FUND = 'false';
+
+  // Pass through Demoni config to bridge
+  safeEnv.DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
+  safeEnv.DEEPSEEK_BASE_URL = cfg.deepseekBaseUrl;
+  safeEnv.DEMONI_BRIDGE_LOCAL_API_KEY = BRIDGE_LOCAL_API_KEY;
+  safeEnv.DEMONI_BRIDGE_PORT = String(bridgePort);
+  safeEnv.DEMONI_BRIDGE_HOST = '127.0.0.1';
+  safeEnv.DEMONI_BRIDGE_AUTO_START = '1';
+  safeEnv.DEMONI_MODEL = process.env.DEMONI_MODEL || cfg.defaultModel;
+  safeEnv.DEMONI_THINKING = process.env.DEMONI_THINKING || '';
+  safeEnv.DEMONI_REASONING_EFFORT = process.env.DEMONI_REASONING_EFFORT || 'high';
+  safeEnv.DEMONI_SYSTEM_PROMPT = process.env.DEMONI_SYSTEM_PROMPT || cfg.systemPrompt || '';
+  // Only pass Brave/Unstructured if explicitly on
+  safeEnv.BRAVE_API_KEY = process.env.BRAVE_API_KEY || '';
+  safeEnv.UNSTRUCTURED_API_KEY = process.env.UNSTRUCTURED_API_KEY || '';
+
+  // Additional privacy blocks for analytics/tracking SDKs
+  safeEnv.SENTRY_DSN = '';
+  safeEnv.DD_API_KEY = '';
+  safeEnv.DD_APP_KEY = '';
+  safeEnv.NEW_RELIC_LICENSE_KEY = '';
+  safeEnv.POSTHOG_API_KEY = '';
+  safeEnv.SEGMENT_WRITE_KEY = '';
+  safeEnv.AMPLITUDE_API_KEY = '';
+  safeEnv.MIXPANEL_TOKEN = '';
+  safeEnv.BUGSNAG_API_KEY = '';
+  safeEnv.ROLLBAR_ACCESS_TOKEN = '';
+
+  return safeEnv;
 }
 
 // ── Bridge management — port selection ──────────────────────────────
@@ -281,8 +383,8 @@ async function waitForReady(url: string, timeoutMs = 30_000): Promise<void> {
       const res = await fetch(`${url}/readyz`, { signal: AbortSignal.timeout(2000) });
       if (res.ok) { log('Bridge is ready at', url); return; }
       lastErr = `HTTP ${res.status}`;
-    } catch (err: any) {
-      lastErr = err.message || String(err);
+    } catch (err: unknown) {
+      lastErr = String(err) || String(err);
     }
     await sleep(200);
   }
@@ -317,7 +419,15 @@ async function startProcessBridge(cfg: DemoniConfig): Promise<string> {
   const bridgeLogStream = createWriteStream(bridgeLogPath, { flags: 'a', mode: 0o600 });
 
   const bridgeEnv: Record<string, string> = {
-    ...(process.env as Record<string, string>),
+    HOME: process.env.HOME || homedir(),
+    PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+    LANG: process.env.LANG || 'en_US.UTF-8',
+    TERM: process.env.TERM || 'xterm-256color',
+    USER: process.env.USER || '',
+    SHELL: process.env.SHELL || '/bin/bash',
+    NODE_ENV: process.env.NODE_ENV || '',
+    TMPDIR: process.env.TMPDIR || '/tmp',
+
     DEMONI_BRIDGE_LOCAL_API_KEY: BRIDGE_LOCAL_API_KEY,
     DEMONI_BRIDGE_PORT: String(bridgePort),
     DEMONI_BRIDGE_HOST: '127.0.0.1',
@@ -325,8 +435,46 @@ async function startProcessBridge(cfg: DemoniConfig): Promise<string> {
     DEMONI_MODEL: process.env.DEMONI_MODEL || cfg.defaultModel,
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || '',
     DEEPSEEK_BASE_URL: cfg.deepseekBaseUrl,
-    // Ensure GEMINI_API_KEY from .env doesn't override bridge auth
+    DEMONI_HOME: DEMONI_HOME,
+    DEMONI_BRIDGE_LOG_LEVEL: process.env.DEMONI_BRIDGE_LOG_LEVEL || 'info',
+    DEMONI_REASONING_EFFORT: process.env.DEMONI_REASONING_EFFORT || 'high',
+    DEMONI_SYSTEM_PROMPT: process.env.DEMONI_SYSTEM_PROMPT || cfg.systemPrompt || '',
+    DEMONI_THINKING: process.env.DEMONI_THINKING || '',
+
     GEMINI_API_KEY: '',
+    GOOGLE_APPLICATION_CREDENTIALS: '',
+    GOOGLE_CLOUD_PROJECT: '',
+    GOOGLE_CLOUD_LOCATION: '',
+    GOOGLE_GENAI_USE_VERTEXAI: 'false',
+
+    GEMINI_TELEMETRY_ENABLED: 'false',
+    GEMINI_TELEMETRY_LOG_PROMPTS: 'false',
+    GEMINI_TELEMETRY_USE_COLLECTOR: 'false',
+    GEMINI_TELEMETRY_OTLP_ENDPOINT: '',
+    GEMINI_TELEMETRY_TARGET: 'local',
+    OTEL_SDK_DISABLED: 'true',
+    OTEL_TRACES_EXPORTER: 'none',
+    OTEL_METRICS_EXPORTER: 'none',
+    OTEL_LOGS_EXPORTER: 'none',
+    OTEL_EXPORTER_OTLP_ENDPOINT: '',
+    OTEL_SERVICE_NAME: '',
+    OTEL_RESOURCE_ATTRIBUTES: '',
+
+    NO_UPDATE_NOTIFIER: '1',
+    NPM_CONFIG_UPDATE_NOTIFIER: 'false',
+    NPM_CONFIG_AUDIT: 'false',
+    NPM_CONFIG_FUND: 'false',
+
+    SENTRY_DSN: '',
+    DD_API_KEY: '',
+    NEW_RELIC_LICENSE_KEY: '',
+    POSTHOG_API_KEY: '',
+    SEGMENT_WRITE_KEY: '',
+    AMPLITUDE_API_KEY: '',
+    MIXPANEL_TOKEN: '',
+    BUGSNAG_API_KEY: '',
+    ROLLBAR_ACCESS_TOKEN: '',
+
     BRAVE_API_KEY: process.env.BRAVE_API_KEY || '',
     UNSTRUCTURED_API_KEY: process.env.UNSTRUCTURED_API_KEY || '',
   };
@@ -419,8 +567,9 @@ async function verifyExternalBridge(url: string): Promise<string> {
       if (!res.ok) {
         die('External bridge unreachable at', url, `(HTTP ${res.status})`);
       }
-    } catch (err: any) {
-      die('External bridge unreachable at', url + ':', err.message || 'connection refused');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      die('External bridge unreachable at', url + ':', msg || 'connection refused');
     }
   }
   log('External bridge verified at', url);
@@ -689,16 +838,40 @@ function spawnGeminiCli(
   cfg: DemoniConfig,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const env = { ...process.env, ...buildGeminiEnv(bridgeUrl, cfg) };
+    const env = buildGeminiEnv(bridgeUrl, cfg);
     log('Spawning Gemini CLI:', geminiPath, args.join(' '));
     log('GOOGLE_GEMINI_BASE_URL=', bridgeUrl);
 
+    // Pipe stderr to filter known Gemini CLI startup warnings
     const child = spawn(geminiPath, args, {
       env,
-      stdio: 'inherit',
+      stdio: ['inherit', 'inherit', 'pipe'],  // inherit stdin/stdout so child detects TTY for interactive mode
       cwd: process.cwd(),
       shell: platform() === 'win32',
     });
+
+    // Filter stderr — suppress known noisy startup warnings
+    if (child.stderr) {
+      let stderrBuffer = '';
+      child.stderr.setEncoding('utf8');
+      child.stderr.on('data', (data) => {
+        stderrBuffer += data;
+        const lines = stderrBuffer.split('\n');
+        stderrBuffer = lines.pop() || '';
+        for (const line of lines) {
+          const filtered = filterStderrLine(line);
+          if (filtered) {
+            process.stderr.write(filtered + '\n');
+          }
+        }
+      });
+      child.stderr.on('end', () => {
+        if (stderrBuffer) {
+          const filtered = filterStderrLine(stderrBuffer);
+          if (filtered) process.stderr.write(filtered + '\n');
+        }
+      });
+    }
 
     child.on('error', (err) => reject(new Error(`Failed to spawn Gemini CLI: ${err.message}`)));
     child.on('exit', (code, signal) => {
@@ -736,6 +909,83 @@ function validateModelArg(args: string[]): void {
   }
 }
 
+// ── System subcommand ────────────────────────────────────────────────
+
+function handleSystemSubcommand(args: string[], cfg: DemoniConfig): void {
+  const sub = args[0];
+  
+  if (sub === 'add') {
+    // demoni system add -f <file>
+    const fileIdx = args.indexOf('-f') !== -1 ? args.indexOf('-f') : args.indexOf('--file');
+    if (fileIdx === -1 || !args[fileIdx + 1]) {
+      die('Usage: demoni system add -f <file.md>');
+    }
+    const filePath = args[fileIdx + 1];
+    if (!existsSync(filePath)) {
+      die(`File not found: ${filePath}`);
+    }
+    const content = readFileSync(filePath, 'utf8').trim();
+    if (!content) {
+      die(`File is empty: ${filePath}`);
+    }
+    updateConfig('systemPrompt', content);
+    console.log(`System prompt loaded from ${filePath} (${content.length} chars)`);
+    console.log('');
+    console.log('Preview:');
+    console.log('──────────────────────────────────────────────');
+    console.log(content.slice(0, 200) + (content.length > 200 ? '...' : ''));
+    console.log('──────────────────────────────────────────────');
+    process.exit(0);
+  }
+
+  if (sub === 'list' || sub === 'show') {
+    if (!cfg.systemPrompt) {
+      console.log('No system prompt set. Use: demoni system add -f <file.md>');
+    } else {
+      console.log(`System prompt (${cfg.systemPrompt.length} chars):`);
+      console.log('──────────────────────────────────────────────');
+      console.log(cfg.systemPrompt);
+      console.log('──────────────────────────────────────────────');
+    }
+    process.exit(0);
+  }
+
+  if (sub === 'remove' || sub === 'clear' || sub === 'delete') {
+    if (!cfg.systemPrompt) {
+      console.log('No system prompt to remove.');
+    } else {
+      updateConfig('systemPrompt', '');
+      console.log('System prompt removed.');
+    }
+    process.exit(0);
+  }
+
+  if (sub === 'help') {
+    console.log(`Demoni System Subcommand
+
+Manage a persistent system prompt injected into every conversation.
+
+Usage:
+  demoni system add -f <file.md>     Load system prompt from file
+  demoni system list                 Show current system prompt
+  demoni system show                 Same as list
+  demoni system remove               Remove system prompt
+  demoni system help                 This help
+
+Shortcuts:
+  demoni -U, --uncensored-mode       Load uncensored prompt from config/uncensored.md
+  demoni -u, --uncensored-off        Remove system prompt
+
+The system prompt is stored in $DEMONI_HOME/config.json and injected
+as a system instruction in every conversation via the bridge.
+`);
+    process.exit(0);
+  }
+
+  die(`Unknown system subcommand: ${sub}. Use: add, list, show, remove, help`);
+}
+
+
 function printHelp(cfg: DemoniConfig): void {
   console.log(`Demoni — Gemini CLI drop-in routing to DeepSeek V4
 
@@ -758,6 +1008,13 @@ Demoni Models:
   v4-pro-thinking      Deep reasoning, architecture (thinking)
 
 Default model: ${cfg.defaultModel}
+
+System Prompt:
+  demoni system add -f <file.md>   Load persistent system prompt
+  demoni system list               Show current system prompt
+  demoni system remove             Clear system prompt
+  demoni -U, --uncensored-mode     Quick-load uncensored prompt
+  demoni -u, --uncensored-off      Disable uncensored mode
 
 Bridge Modes (DEMONI_BRIDGE_MODE):
   auto       Try process, fall back to container (default)
@@ -792,7 +1049,7 @@ Gemini CLI flags not listed here are passed through unchanged.
 }
 
 function printVersion(): void {
-  console.log('demoni v0.2.1');
+  console.log('demoni v0.2.3');
 }
 
 // ── Signal handling & cleanup ───────────────────────────────────────
@@ -828,15 +1085,35 @@ function setupCleanup(): void {
   });
 
   process.on('SIGINT', () => {
-    log('Received SIGINT');
-    cleanup();
-    process.exit(130);
+    // Do not call log() here — logFile() may lazily create streams
+    // inside a signal handler, which is unsafe.  Instead, we use
+    // console.error which is signal-safe.
+    console.error('[demoni] Received SIGINT');
+    
+    // Fire-and-forget async cleanup; exit after timeout backstop.
+    const doExit = () => {
+      if (bridgeProcess && !bridgeProcess.killed) {
+        try { bridgeProcess.kill('SIGKILL'); } catch {}
+      }
+      removePidFile();
+      process.exit(130);
+    };
+    doCleanup().finally(doExit);
+    // If cleanup doesn't finish within 5 seconds, force exit.
+    setTimeout(doExit, 5000).unref();
   });
 
   process.on('SIGTERM', () => {
-    log('Received SIGTERM');
-    cleanup();
-    process.exit(143);
+    console.error('[demoni] Received SIGTERM');
+    const doExit = () => {
+      if (bridgeProcess && !bridgeProcess.killed) {
+        try { bridgeProcess.kill('SIGKILL'); } catch {}
+      }
+      removePidFile();
+      process.exit(143);
+    };
+    doCleanup().finally(doExit);
+    setTimeout(doExit, 5000).unref();
   });
 
   process.on('SIGHUP', () => {
@@ -862,11 +1139,51 @@ function setupCleanup(): void {
 // ── Main ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Load .env before reading any config
+  dotenv.config();
   const args = process.argv.slice(2);
 
   // Load config (reads from file + env)
   const cfg = loadConfig();
+  log('[privacy] Google/Gemini: BLOCKED | Telemetry: OFF | History: ' + cfg.historyMode + ' | Auto-update: OFF');
   log('Config loaded. bridgeMode=', cfg.bridgeMode, 'translatorMode=', cfg.translatorMode, 'defaultModel=', cfg.defaultModel);
+
+  // ── System subcommand ──────────────────────────────────────────────
+  if (args[0] === 'system') {
+    handleSystemSubcommand(args.slice(1), cfg);
+    // handleSystemSubcommand exits, but just in case:
+    process.exit(0);
+  }
+
+  // ── Uncensored mode shortcut ───────────────────────────────────────
+  const uncensoredIdx = args.indexOf('-U') !== -1 ? args.indexOf('-U') : args.indexOf('--uncensored-mode');
+  const uncensoredOffIdx = args.indexOf('-u') !== -1 ? args.indexOf('-u') : args.indexOf('--uncensored-off');
+  
+  if (uncensoredIdx !== -1) {
+    // Find uncensored.md relative to repo root or cwd
+    const candidates = [
+      join(REPO_ROOT, 'config', 'uncensored.md'),
+      join(process.cwd(), 'config', 'uncensored.md'),
+    ];
+    let found = '';
+    for (const c of candidates) {
+      if (existsSync(c)) { found = c; break; }
+    }
+    if (!found) {
+      die('Uncensored prompt not found. Expected at: config/uncensored.md');
+    }
+    const content = readFileSync(found, 'utf8').trim();
+    updateConfig('systemPrompt', content);
+    log(`Uncensored mode ON — system prompt loaded (${content.length} chars)`);
+    // Remove the -U/--uncensored-mode flag from args so it doesn't go to Gemini CLI
+    args.splice(uncensoredIdx, 1);
+  }
+  
+  if (uncensoredOffIdx !== -1) {
+    updateConfig('systemPrompt', '');
+    log('Uncensored mode OFF — system prompt cleared');
+    args.splice(uncensoredOffIdx, 1);
+  }
 
   // Handle help/version early — no API key or bridge needed
   if (args.includes('--help') || args.includes('-h') || args.includes('help')) {
@@ -889,6 +1206,10 @@ async function main(): Promise<void> {
 
   // Set up dirs and cleanup
   ensureDemoniDirs();
+
+  // Initialize log stream early so signal handlers never lazily create
+  // it (lazy creation inside signal handlers risks deadlocks).
+  logFile('demoni startup');
   setupCleanup();
   writeGeminiSettings(cfg);
 
@@ -916,8 +1237,32 @@ async function main(): Promise<void> {
     }
   }
 
-  // Start the bridge
+  // Start the bridge (with overall startup timeout)
+  const STARTUP_TIMEOUT_MS = 60_000;
+  const startupTimer = setTimeout(() => {
+    die('Startup timed out after ' + STARTUP_TIMEOUT_MS/1000 + 's. Check bridge health and DEEPSEEK_API_KEY.');
+  }, STARTUP_TIMEOUT_MS);
+  startupTimer.unref();
+
   const bridgeUrl = await startBridge(cfg);
+  clearTimeout(startupTimer);
+
+  // ── No-input UX check ──────────────────────────────────────────
+  // When invoked with zero arguments and TTY stdin (no pipe), show
+  // a friendly Demoni-branded hint before entering interactive mode.
+  if (args.length === 0 && process.stdin.isTTY) {
+    process.stderr.write(
+      '┌' + '─'.repeat(61) + '┐\n' +
+      '│  Demoni v0.2.2 — AI coding agent (DeepSeek V4)           │\n' +
+      '│  Type your question or use:                              │\n' +
+      '│    demoni "your question here"                           │\n' +
+      '│    demoni --prompt "your question here"                  │\n' +
+      '│    demoni -m v4-flash "quick question"                   │\n' +
+      '│    demoni --help                                         │\n' +
+      '│  Piping: echo "question" | demoni -y                     │\n' +
+      '└' + '─'.repeat(61) + '┘\n\n',
+    );
+  }
 
   // Spawn Gemini CLI
   const geminiPath = findGeminiCli();

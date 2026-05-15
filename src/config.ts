@@ -28,6 +28,8 @@ export interface DemoniConfig {
   logLevel: LogLevel;
   enableBraveSearch: EnableFlag;
   enableUnstructured: EnableFlag;
+  historyMode: 'ephemeral' | 'local' | 'off';
+  systemPrompt: string;
 }
 
 // ── Defaults ───────────────────────────────────────────────────────
@@ -40,6 +42,8 @@ const DEFAULTS: DemoniConfig = {
   logLevel: 'info',
   enableBraveSearch: 'auto',
   enableUnstructured: 'auto',
+  historyMode: 'ephemeral',
+  systemPrompt: '',
 };
 
 // ── Paths ──────────────────────────────────────────────────────────
@@ -74,6 +78,10 @@ function loadFileConfig(): Partial<DemoniConfig> {
     if (isLogLevel(raw.logLevel)) out.logLevel = raw.logLevel;
     if (isEnableFlag(raw.enableBraveSearch)) out.enableBraveSearch = raw.enableBraveSearch;
     if (isEnableFlag(raw.enableUnstructured)) out.enableUnstructured = raw.enableUnstructured;
+    if (typeof raw.systemPrompt === 'string') out.systemPrompt = raw.systemPrompt;
+    if (typeof raw.historyMode === 'string' && ['ephemeral', 'local', 'off'].includes(raw.historyMode)) {
+      out.historyMode = raw.historyMode;
+    }
     return out;
   } catch {
     return {};
@@ -92,6 +100,10 @@ function loadEnvOverrides(): Partial<DemoniConfig> {
   if (isLogLevel(process.env.DEMONI_LOG_LEVEL)) out.logLevel = process.env.DEMONI_LOG_LEVEL;
   if (isEnableFlag(process.env.DEMONI_ENABLE_BRAVE_SEARCH)) out.enableBraveSearch = process.env.DEMONI_ENABLE_BRAVE_SEARCH;
   if (isEnableFlag(process.env.DEMONI_ENABLE_UNSTRUCTURED)) out.enableUnstructured = process.env.DEMONI_ENABLE_UNSTRUCTURED;
+  if (process.env.DEMONI_SYSTEM_PROMPT) out.systemPrompt = process.env.DEMONI_SYSTEM_PROMPT;
+  if (process.env.DEMONI_HISTORY_MODE === 'ephemeral' || process.env.DEMONI_HISTORY_MODE === 'local' || process.env.DEMONI_HISTORY_MODE === 'off') {
+    out.historyMode = process.env.DEMONI_HISTORY_MODE;
+  }
 
   return out;
 }

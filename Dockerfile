@@ -29,7 +29,7 @@ WORKDIR /opt/demoni
 RUN mkdir -p bin bridge config /workspace /home/demoni/.demoni
 
 # Install official Gemini CLI (global npm)
-ARG GEMINI_CLI_NPM_VERSION=latest
+ARG GEMINI_CLI_NPM_VERSION=0.42.0
 RUN npm install -g @google/gemini-cli@${GEMINI_CLI_NPM_VERSION}
 
 # Copy Demoni CLI
@@ -54,6 +54,8 @@ RUN groupadd -g 10001 demoni \
 
 # Environment — bridge will pick an ephemeral port, DEMONI_BRIDGE_PORT only as fallback
 ENV PATH="/opt/demoni/bin:${PATH}" \
+    TERM="xterm-256color" \
+    COLORTERM="truecolor" \
     HOME="/home/demoni" \
     DEMONI_HOME="/home/demoni/.demoni" \
     DEMONI_BRIDGE_MODE="process" \

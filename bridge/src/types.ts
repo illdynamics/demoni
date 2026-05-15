@@ -63,6 +63,13 @@ export { MODEL_BY_PROVIDER };
 // ── Gemini API types (inbound) ────────────────────────────────────────
 
 export interface GeminiPart {
+  /**
+   * If true, this part contains internal model reasoning/thought content.
+   * The upstream Gemini CLI renders these as special thought blocks (not raw text).
+   */
+  thought?: boolean;
+  /** Optional Gemini-style thought signature for attribution. */
+  thoughtSignature?: string;
   text?: string;
   inlineData?: {
     mimeType: string;

@@ -5,17 +5,15 @@
  * with a mock DeepSeek server.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { resolve } from 'node:path';
-import { tmpdir } from 'node:os';
-import { mkdtempSync, existsSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+
+import { rmSync } from 'node:fs';
 
 const CLI_PATH = resolve(process.cwd(), 'dist/cli.js');
 
 let mockServer: Server | null = null;
-let mockDeepSeekBaseUrl = '';
 let tempDirs: string[] = [];
 
 function findFreePort(): Promise<number> {
@@ -40,7 +38,7 @@ function startMockDeepSeek(): Promise<{ server: Server; baseUrl: string }> {
     const baseUrl = `http://127.0.0.1:${port}`;
 
     const server = createServer((req, res) => {
-      let body = '';
+      // let body = '';
       req.on('data', (chunk) => { body += chunk; });
       req.on('end', () => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -93,24 +91,19 @@ async function runCli(
       resolve({ stdout, stderr, exitCode: null });
     }, timeoutMs);
 
-    child.on('exit', (code, signal) => {
+    child.on('exit', (_code, _signal) => {
       clearTimeout(timer);
-      resolve({ stdout, stderr, exitCode: code });
+      resolve({ stdout, stderr, exitCode: _code });
     });
   });
 }
 
-function makeTempHome(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'demoni-test-home-'));
-  tempDirs.push(dir);
-  return dir;
-}
 
 describe('Demoni Integration', () => {
   beforeAll(async () => {
     const mock = await startMockDeepSeek();
     mockServer = mock.server;
-    mockDeepSeekBaseUrl = mock.baseUrl;
+    
   });
 
   afterAll(() => {
@@ -142,7 +135,7 @@ describe('Demoni Integration', () => {
     });
 
     it('demoni help works', async () => {
-      const { stdout, exitCode } = await runCli(['help'], { DEEPSEEK_API_KEY: '' });
+      const { exitCode } = await runCli(['help'], { DEEPSEEK_API_KEY: '' });
       expect(exitCode).toBe(0);
     });
 
@@ -214,7 +207,7 @@ describe('Demoni Integration', () => {
     });
 
     it('demoni -m unknown-model fails', async () => {
-      const { stderr, exitCode } = await runCli(
+      const { exitCode } = await runCli(
         ['-m', 'unknown-model-xyz', 'hello'],
         { DEEPSEEK_API_KEY: 'sk-test' },
       );

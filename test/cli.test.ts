@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { describe, it, expect } from 'vitest';
+import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const CLI_PATH = resolve(process.cwd(), 'dist/cli.js');
@@ -95,7 +95,7 @@ describe('demoni CLI', () => {
   });
 
   it('fails without DEEPSEEK_API_KEY', async () => {
-    const { stderr, exitCode } = await runCli(
+    const { exitCode } = await runCli(
       ['--help'],
       { DEEPSEEK_API_KEY: '' },
     );
@@ -105,7 +105,7 @@ describe('demoni CLI', () => {
 
   it('passes through unknown flags', async () => {
     // Just validate that unknown flags don't cause model rejection
-    const { stdout, exitCode } = await runCli(
+    const { exitCode } = await runCli(
       ['--some-unknown-flag', '--help'],
       { DEEPSEEK_API_KEY: 'sk-test' },
     );
@@ -136,3 +136,41 @@ describe('demoni CLI', () => {
     expect(exitCode).toBe(0);
   });
 });
+
+  it('shows demoni-branded no-input message (not gemini)', async () => {
+    const { stderr } = await runCli(
+      ['-y'],
+      { DEEPSEEK_API_KEY: 'sk-test', TERM: 'dumb', CI: 'true', NO_COLOR: '1' },
+    );
+    // Should show demoni-branded no-input message, not gemini
+    expect(stderr).toContain('demoni');
+    expect(stderr).not.toContain('piping data into gemini');
+  });
+
+  it('stderr filter drops cleanup_ops and true-color warnings', async () => {
+    // The stderr filter is applied to Gemini CLI child process output.
+    // Test that our filter correctly drops known noisy startup messages.
+    // We test without --prompt to avoid bridge startup overhead.
+    const { stderr } = await runCli(
+      ['-y'],
+      { DEEPSEEK_API_KEY: 'sk-test', TERM: 'dumb', CI: 'true', NO_COLOR: '1' },
+    );
+    // Verify known noisy messages are filtered
+    expect(stderr).not.toContain('STARTUP');
+    expect(stderr).not.toContain('cleanup_ops');
+    expect(stderr).not.toContain('True color');
+    expect(stderr).not.toContain('256-color');
+    expect(stderr).not.toContain('Basic terminal');
+    expect(stderr).not.toContain('Ripgrep');
+    // Verify demoni branding (not gemini)
+    expect(stderr).toContain('demoni');
+  });
+
+  it('shows YOLO message only once', async () => {
+    const { stderr } = await runCli(
+      ['-y'],
+      { DEEPSEEK_API_KEY: 'sk-test', TERM: 'dumb', CI: 'true', NO_COLOR: '1' },
+    );
+    const yoloCount = (stderr.match(/YOLO mode is enabled/g) || []).length;
+    expect(yoloCount).toBeLessThanOrEqual(1);
+  });

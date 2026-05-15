@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, existsSync, readFileSync, rmSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, readdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -33,9 +33,9 @@ function runCli(
       resolve({ stdout, stderr, exitCode: null });
     }, timeoutMs);
 
-    child.on('exit', (code, signal) => {
+    child.on('exit', (_code, _signal) => {
       clearTimeout(timer);
-      resolve({ stdout, stderr, exitCode: code });
+      resolve({ stdout, stderr, exitCode: _code });
     });
   });
 }
@@ -83,7 +83,7 @@ describe('Fresh HOME Auth Bypass', () => {
     const demoniHome = join(tempHome, '.demoni');
 
     // Run with a 2s kill — directories are created sync before bridge starts
-    const result = await runCli(
+    await runCli(
       ['-m', 'v4-flash', 'hello'],
       {
         HOME: tempHome,

@@ -1,6 +1,6 @@
 {
   "name": "demoni",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "Production-grade Gemini CLI drop-in replacement that routes to DeepSeek V4 models",
   "type": "module",
   "bin": {
@@ -33,7 +33,9 @@
     "test:ci": "npx vitest run --exclude 'test/docker*'",
     "test:unit": "npx vitest run --exclude \"test/docker*\"",
     "check:release-hygiene": "bash scripts/check-release-hygiene.sh",
-    "test:real-gemini": "DEMONI_RUN_REAL_GEMINI_TESTS=1 npx vitest run test/real-gemini-cli.integration.test.ts 2>/dev/null || echo \"Real Gemini CLI tests require interactive terminal. Set DEMONI_RUN_REAL_GEMINI_TESTS=1 to enable.\""
+    "test:real-gemini": "DEMONI_RUN_REAL_GEMINI_TESTS=1 npx vitest run test/real-gemini-cli.integration.test.ts 2>/dev/null || echo \"Real Gemini CLI tests require interactive terminal. Set DEMONI_RUN_REAL_GEMINI_TESTS=1 to enable.\"",
+    "privacy:audit": "bash scripts/privacy-audit.sh",
+    "test:privacy": "npx vitest run test/privacy.test.ts test/bridge-privacy.test.ts"
   },
   "keywords": [
     "gemini-cli",
@@ -48,21 +50,21 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@google/gemini-cli": "^0.41.0",
-    "axios": "*",
-    "cors": "*",
-    "dotenv": "^16.4.5",
-    "express": "*",
-    "zod": "*"
+    "@google/gemini-cli": "0.42.0",
+    "axios": "1.16.0",
+    "cors": "2.8.6",
+    "dotenv": "16.6.1",
+    "express": "5.2.1",
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.12.7",
-    "@typescript-eslint/eslint-plugin": "^8.59.3",
-    "@typescript-eslint/parser": "^8.59.3",
-    "eslint": "^9.39.4",
-    "tsx": "^4.20.3",
-    "typescript": "^5.4.5",
-    "vitest": "^3.2.4"
+    "@types/express": "4.17.25",
+    "@types/node": "20.19.0",
+    "@typescript-eslint/eslint-plugin": "8.59.3",
+    "@typescript-eslint/parser": "8.59.3",
+    "eslint": "9.39.4",
+    "tsx": "4.21.0",
+    "typescript": "^5.9.0",
+    "vitest": "3.2.4"
   }
 }

@@ -1,4 +1,82 @@
+## v0.2.3 (2026-05-15)
+
+### Features
+- **Interactive TTY**: The containerized `demoni` wrapper (`~/bin/demoni`) now conditionally allocates a TTY (`-t`) when stdin is a terminal,
+  restoring full Gemini CLI interactive mode for `demoni` and `demoni -y`. Piped input still works without TTY.
+- **Smart TTY passthrough**: TTY is only passed through when the parent process has a terminal on stdin, so piped usage
+  (`echo "query" | demoni -y`) still works correctly.
+- **Host TERM passthrough**: The wrapper now forwards the host's `TERM` and `COLORTERM` environment variables into the container.
+  The Docker image also sets sensible defaults (`TERM=xterm-256color`, `COLORTERM=truecolor`), eliminating both
+  `256-color support not detected` and `True color support not detected` startup warnings from the Gemini CLI.
+
+### Fixes
+- **Stderr warning suppression**: Fixed `stderr-filter.ts` regex patterns to catch Gemini CLI v0.42.0 warning format changes.
+  The new format uses a `⚠` emoji prefix (e.g. `⚠  Warning: 256-color...`). Added a `stripPrefix()` helper that strips
+  leading non-alphanumeric characters before matching, and added `256-color` (dash variant) to the drop patterns.
+- **Gemini CLI sync**: Both the host `package.json` (`@google/gemini-cli`) and the `Dockerfile` (`GEMINI_CLI_NPM_VERSION`)
+  were updated from `0.41.2` to `0.42.0`, matching the host's globally installed version.
+
+### Changes
+- `VERSION` — v0.2.3
+- `package.json` — `@google/gemini-cli` 0.42.0, version 0.2.3
+- `package-lock.json` — Regenerated
+- `Dockerfile` — Added `TERM`, `COLORTERM` env vars; `GEMINI_CLI_NPM_VERSION` → 0.42.0
+- `~/bin/demoni` (installed wrapper) — `-t` flag + TERM/COLORTERM passthrough
+- `demoni` (bootstrap script) — Updated wrapper template
+- `src/cli.ts` — v0.2.3, branded banner updated
+- `src/stderr-filter.ts` — Fixed pattern matching for emoji-prefixed warnings
+- `dist/stderr-filter.js` — Recompiled
+- `dist/cli.js` — Recompiled
+- `README.md` — v0.2.3 references
+- `PRIVACY_LOCKDOWN.md` — v0.2.3 references
+- `RELEASE-NOTES.md` — This entry
+
 # Demoni Release Notes
+
+## v0.2.2 (2026-05-14)
+
+### Critical Fix
+- **Interactive mode restored**: Fixed TTY detection for Gemini CLI child process.
+  `demoni` and `demoni -y` now enter interactive mode correctly (like upstream `gemini`).
+  The root cause was Node.js `child_process.spawn` passing `process.stdin` as a stream
+  object, which created a pipe instead of inheriting the TTY descriptor. Changed to
+  `stdio: ['inherit', 'inherit', 'pipe']`.
+
+### Production Hardening (MasterWonq Audit — 9 findings fixed)
+- **Release hygiene**: Fixed `check-release-hygiene.sh` — removed `.codeseeq` dev tool from
+  forbidden list; fixed broken `node_modules` check in the same script.
+- **Dependency pinning**: All dependencies pinned to exact versions (no `^` prefixes) in both
+  `package.json` and `bridge/package.json`. `@google/gemini-cli` pinned to `0.41.2`.
+  `Dockerfile` `GEMINI_CLI_NPM_VERSION` pinned to `0.41.2`.
+- **Startup timeout**: Added 60-second startup timeout in `main()` to prevent indefinite hangs
+  when bridge fails to start. Calls `die()` with clear error message.
+- **SIGINT/SIGTERM async-safety**: Signal handlers no longer call `log()` (avoids lazy
+  `WriteStream` creation in signal handler). Async cleanup (`doCleanup()`) now completes
+  before process exit with 5-second timeout backstop. Log stream initialized early in
+  `main()`.
+- **Safer container runtime detection**: `execSync()` replaced with `spawnSync()` + PATH-based
+  path probing in `findContainerRuntime()`. Eliminates latent command injection risk.
+- **Bridge graceful shutdown connection draining**: Added active socket tracking in bridge
+  server. On shutdown, tracked sockets are destroyed after a drain window (1/3 of shutdown
+  timeout, max 3s) before force exit.
+- **Stderr filter maintenance policy**: Added comprehensive maintenance documentation in
+  `src/stderr-filter.ts` describing when to run smoke tests, how to add patterns, and when
+  to deprecate filters.
+- **TypeScript hygiene**: Replaced `catch (err: any)` with `catch (err: unknown)` + type guards
+  in `src/cli.ts`.
+- **Test coverage**: Added 3 new CLI integration tests for demoni-branded no-input message,
+  stderr filter warning suppression, and YOLO deduplication. Total test count: 180 (up from
+  177).
+
+### Changes
+- `scripts/check-release-hygiene.sh` — Fixed release hygiene check
+- `package.json` — Pinned all deps, bumped version
+- `bridge/package.json` — Pinned all deps
+- `Dockerfile` — Pinned `GEMINI_CLI_NPM_VERSION`
+- `src/cli.ts` — Startup timeout, SIGINT async-safety, safer container detection, `any` → `unknown`, TTY stdio inheritance fix
+- `src/stderr-filter.ts` — Maintenance policy documentation
+- `bridge/src/server.ts` — Connection draining for graceful shutdown
+- `test/cli.test.ts` — 3 new integration tests
 
 ## v0.2.1 (2026-05-12)
 
