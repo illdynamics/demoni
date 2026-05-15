@@ -242,7 +242,16 @@ fi
 
 mkdir -p "${CONFIG_DIR}/log" "${CONFIG_DIR}/run" "${CONFIG_DIR}/gemini-cli-home"
 
-exec ${CONTAINER_ENGINE} run --rm -i \
+# Allocate a TTY only when stdin is a terminal (interactive mode).
+# Without -t, Gemini CLI can't detect TTY and refuses to enter interactive mode.
+TTY_FLAG=""
+if [[ -t 0 ]]; then
+  TTY_FLAG="-t"
+fi
+
+exec ${CONTAINER_ENGINE} run --rm -i ${TTY_FLAG} \
+  ${TERM:+-e TERM="${TERM}"} \
+  ${COLORTERM:+-e COLORTERM="${COLORTERM}"} \
   ${DEEPSEEK_API_KEY:+-e DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY}"} \
   ${DEMONI_MODEL:+-e DEMONI_MODEL="${DEMONI_MODEL}"} \
   ${DEMONI_REASONING_EFFORT:+-e DEMONI_REASONING_EFFORT="${DEMONI_REASONING_EFFORT}"} \

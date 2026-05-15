@@ -9,7 +9,7 @@ But your prompts go to DeepSeek V4 models via your `DEEPSEEK_API_KEY` — no Goo
   <img src="./demoni.jpg" alt="Demoni" width="80%">
 </p>
 
-Current version: `v0.2.1` (from [`VERSION`](./VERSION)).
+Current version: `v0.2.3` (from [`VERSION`](./VERSION)).
 
 Release notes: [`RELEASE-NOTES.md`](./RELEASE-NOTES.md)
 
@@ -38,8 +38,8 @@ cd demoni
 ```bash
 # Grab the latest release from:
 #   https://github.com/illdynamics/demoni/releases/latest
-unzip demoni-v0.2.1.zip
-cd demoni-v0.2.1
+unzip demoni-v0.2.3.zip
+cd demoni-v0.2.3
 ./demoni install
 ```
 
@@ -179,7 +179,7 @@ Demoni uses GitHub Actions for continuous integration and automated releases.
 - **CI workflow** (`.github/workflows/ci.yml`): Runs on every push and PR — static checks, build & test, package verification, Docker smoke tests.
 - **Release workflow** (`.github/workflows/release.yml`): Triggers after CI and only runs on version tags (`v*`). Creates a GitHub Release with a zip archive.
 
-A release is created automatically when a tag matching `v*` (e.g. `v0.2.2`) is pushed and all CI checks pass.
+A release is created automatically when a tag matching `v*` (e.g. `v0.2.3`) is pushed and all CI checks pass.
 
 ## Acceptance Criteria
 

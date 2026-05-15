@@ -845,7 +845,7 @@ function spawnGeminiCli(
     // Pipe stderr to filter known Gemini CLI startup warnings
     const child = spawn(geminiPath, args, {
       env,
-      stdio: [process.stdin, process.stdout, 'pipe'],
+      stdio: ['inherit', 'inherit', 'pipe'],  // inherit stdin/stdout so child detects TTY for interactive mode
       cwd: process.cwd(),
       shell: platform() === 'win32',
     });
@@ -1049,7 +1049,7 @@ Gemini CLI flags not listed here are passed through unchanged.
 }
 
 function printVersion(): void {
-  console.log('demoni v0.2.1');
+  console.log('demoni v0.2.3');
 }
 
 // ── Signal handling & cleanup ───────────────────────────────────────
@@ -1253,7 +1253,7 @@ async function main(): Promise<void> {
   if (args.length === 0 && process.stdin.isTTY) {
     process.stderr.write(
       '┌' + '─'.repeat(61) + '┐\n' +
-      '│  Demoni v0.2.1 — AI coding agent (DeepSeek V4)           │\n' +
+      '│  Demoni v0.2.2 — AI coding agent (DeepSeek V4)           │\n' +
       '│  Type your question or use:                              │\n' +
       '│    demoni "your question here"                           │\n' +
       '│    demoni --prompt "your question here"                  │\n' +

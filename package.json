@@ -1,6 +1,6 @@
 {
   "name": "demoni",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "Production-grade Gemini CLI drop-in replacement that routes to DeepSeek V4 models",
   "type": "module",
   "bin": {
@@ -50,7 +50,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@google/gemini-cli": "0.41.2",
+    "@google/gemini-cli": "0.42.0",
     "axios": "1.16.0",
     "cors": "2.8.6",
     "dotenv": "16.6.1",
@@ -64,7 +64,7 @@
     "@typescript-eslint/parser": "8.59.3",
     "eslint": "9.39.4",
     "tsx": "4.21.0",
-    "typescript": "5.9.0",
+    "typescript": "^5.9.0",
     "vitest": "3.2.4"
   }
 }

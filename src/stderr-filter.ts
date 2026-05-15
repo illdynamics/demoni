@@ -31,18 +31,27 @@
  * ─────────────────────────────────────────────────────────────────
  */
 
+/**
+ * Strip leading non-alphanumeric characters (emoji, bullets, etc.)
+ * so patterns can match the core warning text without worrying about
+ * visual prefixes the Gemini CLI may add.
+ */
+function stripPrefix(s: string): string {
+  return s.replace(/^[^a-zA-Z0-9]+/, '');
+}
+
 /** Set of exact-line-hash patterns to drop entirely. */
 const DROP_EXACT: Set<string> = new Set([
-  'Warning: True color (24-bit) support not detected. Using a terminal with true color enabled will result in a better visual experience.',
   'Ripgrep is not available. Falling back to GrepTool.',
-  'Warning: True color (24-bit) support not detected.',
 ]);
 
 /** Regex patterns to drop fully. */
 const DROP_PATTERNS: RegExp[] = [
-  /^Warning: True color \(24-bit\) support not detected/i,
-  /^Warning: Basic terminal detected/i,
-  /^Warning: 256.color support not detected/i,
+  // Terminal capability warnings — these can be prefixed with "Warning:" or "⚠  Warning:" or similar
+  /^Warning:\s+True color \(24-bit\) support not detected/i,
+  /^Warning:\s+Basic terminal detected/i,
+  /^Warning:\s+256.color support not detected/i,
+  /^Warning:\s+256-color support not detected/i,
   /^Ripgrep is not available\.\s*Falling back to GrepTool/i,
   /^\[STARTUP\] Phase '.*' was started but never ended\. Skipping metrics\.\s*$/,
   /^\[STARTUP\] Cannot measure phase '.*': start mark '.*' not found \(likely cleared by reset\)\.\s*$/,
@@ -69,12 +78,15 @@ export function filterStderrLine(line: string): string {
   const trimmed = line.trim();
   if (!trimmed) return line; // preserve blank lines
 
-  // 1. Exact-match drops
-  if (DROP_EXACT.has(trimmed)) return '';
+  // Strip any non-alphanumeric prefix (emoji, bullets, etc.) for matching
+  const stripped = stripPrefix(trimmed);
 
-  // 2. Pattern-match drops
+  // 1. Exact-match drops (try both raw and stripped)
+  if (DROP_EXACT.has(trimmed) || DROP_EXACT.has(stripped)) return '';
+
+  // 2. Pattern-match drops (try both raw and stripped)
   for (const pat of DROP_PATTERNS) {
-    if (pat.test(trimmed)) return '';
+    if (pat.test(trimmed) || pat.test(stripped)) return '';
   }
 
   // 3. YOLO deduplication — allow only the first occurrence
@@ -85,7 +97,7 @@ export function filterStderrLine(line: string): string {
   }
 
   // 4. "gemini" → "demoni" in no-input message
-  if (NO_INPUT_PATTERN.test(trimmed)) {
+  if (NO_INPUT_PATTERN.test(trimmed) || NO_INPUT_PATTERN.test(stripped)) {
     return line.replace(NO_INPUT_PATTERN, NO_INPUT_REPLACEMENT);
   }
 

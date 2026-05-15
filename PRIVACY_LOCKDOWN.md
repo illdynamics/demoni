@@ -213,4 +213,4 @@ If OAuth or ADC auth is attempted:
 
 ---
 
-*Applied to Demoni v0.2.1+*
+*Applied to Demoni v0.2.3+*
