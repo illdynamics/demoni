@@ -93,7 +93,7 @@ async function runCli(
 
     child.on('exit', (_code, _signal) => {
       clearTimeout(timer);
-      resolve({ stdout, stderr, exitCode: code });
+      resolve({ stdout, stderr, exitCode: _code });
     });
   });
 }

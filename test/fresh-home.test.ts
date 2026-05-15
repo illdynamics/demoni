@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, readdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -35,7 +35,7 @@ function runCli(
 
     child.on('exit', (_code, _signal) => {
       clearTimeout(timer);
-      resolve({ stdout, stderr, exitCode: code });
+      resolve({ stdout, stderr, exitCode: _code });
     });
   });
 }
